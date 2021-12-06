@@ -90,17 +90,25 @@ fn main() -> Result<()> {
             }
         }
     }
-    /*
-    // an alternative way to do the match
-    if right_joycon.is_none() {
-        eprintln!("Error running right joycon monitor");
+    if left_joycon.is_none() || right_joycon.is_none() {
+        eprintln!(
+            "Error: didn't find both joycons: left {} right {}",
+            !left_joycon.is_none(),
+            !right_joycon.is_none()
+        );
     } else {
-        hid_main(right_joycon.unwrap(), &opts).context("error running the command")?;
-    }*/
-    match right_joycon {
+        hid_main(left_joycon.unwrap(), right_joycon.unwrap(), &opts)
+            .context("error running the command")?;
+    }
+    /*
+    match left_joycon {
         Some(joycon) => hid_main(joycon, &opts).context("error running the command")?,
         None => eprintln!("Error running right joycon monitor"),
     }
+    match right_joycon {
+        Some(joycon) => hid_main(joycon, &opts).context("error running the command")?,
+        None => eprintln!("Error running right joycon monitor"),
+    }*/
 
     /*
     loop {
@@ -138,7 +146,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn hid_init_joycon(mut joycon: JoyCon) -> Result<JoyCon> {
+fn hid_init_joycon(mut joycon: JoyCon, lbl: &str) -> Result<JoyCon> {
     joycon.set_home_light(light::HomeLight::new(
         0x8,
         0x2,
@@ -146,7 +154,7 @@ fn hid_init_joycon(mut joycon: JoyCon) -> Result<JoyCon> {
         &[(0xf, 0xf, 0), (0x2, 0xf, 0)],
     ))?;
     let battery_level = joycon.tick()?.info.battery_level();
-    println!("Battery level is {:?}", battery_level);
+    println!("{} Battery level is {:?}", lbl, battery_level);
     joycon.set_player_light(light::PlayerLights::new(
         (battery_level >= BatteryLevel::Full).into(),
         (battery_level >= BatteryLevel::Medium).into(),
@@ -160,15 +168,31 @@ fn hid_init_joycon(mut joycon: JoyCon) -> Result<JoyCon> {
     Ok(joycon)
 }
 
-fn hid_main(mut joycon: JoyCon, opts: &Opts) -> Result<()> {
-    joycon = hid_init_joycon(joycon)?;
+fn hid_main(mut left_joycon: JoyCon, mut right_joycon: JoyCon, opts: &Opts) -> Result<()> {
+    left_joycon = hid_init_joycon(left_joycon, "Left joycon")?;
+    right_joycon = hid_init_joycon(right_joycon, "Right joycon")?;
     match opts.subcmd {
         SubCommand::Calibrate(ref calib) => match calib.subcmd {
-            CalibrateE::Sticks => calibrate_sticks(&mut joycon)?,
-            CalibrateE::Gyroscope => calibrate_gyro(&mut joycon)?,
-            CalibrateE::Reset => reset_calibration(&mut joycon)?,
+            CalibrateE::Sticks => {
+                calibrate_sticks(&mut left_joycon)?;
+                calibrate_sticks(&mut right_joycon)?;
+            }
+            CalibrateE::Gyroscope => {
+                calibrate_gyro(&mut left_joycon)?;
+                calibrate_gyro(&mut right_joycon)?;
+            }
+            CalibrateE::Reset => {
+                reset_calibration(&mut left_joycon)?;
+                reset_calibration(&mut right_joycon)?;
+            }
         },
-        SubCommand::Get => get(&mut joycon)?,
+        SubCommand::Get => {
+            get(&mut left_joycon)?;
+            get(&mut right_joycon)?;
+        }
+        SubCommand::Monitor => monitor(&mut left_joycon, &mut right_joycon)?,
+        _ => (),
+        /*
         SubCommand::Set(ref set) => match set.subcmd {
             SetE::Color(ref arg) => set_color(&mut joycon, arg)?,
         },
@@ -181,6 +205,7 @@ fn hid_main(mut joycon: JoyCon, opts: &Opts) -> Result<()> {
         #[cfg(feature = "interface")]
         SubCommand::Tui => unreachable!(),
         SubCommand::Camera => camera::run(joycon)?,
+        */
     }
     Ok(())
 }
@@ -452,13 +477,16 @@ fn set_color(joycon: &mut JoyCon, arg: &SetColor) -> Result<()> {
     Ok(())
 }
 
-fn monitor(joycon: &mut JoyCon) -> Result<()> {
-    joycon.enable_imu()?;
-    joycon.load_calibration()?;
+fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
+    left_joycon.enable_imu()?;
+    left_joycon.load_calibration()?;
+    right_joycon.enable_imu()?;
+    right_joycon.load_calibration()?;
     //let mut orientation = Quaternion::one();
     let mut now = Instant::now();
     loop {
-        let report = joycon.tick()?;
+        let left_report = left_joycon.tick()?;
+        let right_report = right_joycon.tick()?;
         /*
         let mut last_acc = Vector3::unit_x();
         let mut last_rot = Vector3::unit_x();
@@ -474,8 +502,11 @@ fn monitor(joycon: &mut JoyCon) -> Result<()> {
         }*/
         if now.elapsed() > Duration::from_millis(100) {
             now = Instant::now();
-            if format!("{}", report.buttons) != "" {
-                println!("Clicked: {}", report.buttons);
+            if format!("{}", left_report.buttons) != "" {
+                println!("Left joycon clicked: {}", left_report.buttons);
+            }
+            if format!("{}", right_report.buttons) != "" {
+                println!("Right joycon clicked: {}", right_report.buttons);
             }
             /*
             let euler_rot = Euler::from(orientation);
