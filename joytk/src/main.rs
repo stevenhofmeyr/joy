@@ -65,7 +65,7 @@ fn main() -> Result<()> {
     let api = HidApi::new()?;
 
     let mut right_joycon = None;
-    //let mut left_joycon = None;
+    let mut left_joycon = None;
 
     for device_info in api.device_list() {
         if device_info.vendor_id() == NINTENDO_VENDOR_ID {
@@ -83,16 +83,20 @@ fn main() -> Result<()> {
                 right_joycon = Some(JoyCon::new(device, device_info.clone())?);
             } else if device_info.product_string() == Some("Joy-Con (L)") {
                 println!("Left joycon found");
+                let device = device_info
+                    .open_device(&api)
+                    .with_context(|| format!("error opening the HID device {:?}", device_info))?;
+                left_joycon = Some(JoyCon::new(device, device_info.clone())?);
             }
         }
     }
     /*
+    // an alternative way to do the match
     if right_joycon.is_none() {
         eprintln!("Error running right joycon monitor");
     } else {
         hid_main(right_joycon.unwrap(), &opts).context("error running the command")?;
     }*/
-
     match right_joycon {
         Some(joycon) => hid_main(joycon, &opts).context("error running the command")?,
         None => eprintln!("Error running right joycon monitor"),
@@ -134,16 +138,15 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn hid_main(mut joycon: JoyCon, opts: &Opts) -> Result<()> {
+fn hid_init_joycon(mut joycon: JoyCon) -> Result<JoyCon> {
     joycon.set_home_light(light::HomeLight::new(
         0x8,
         0x2,
         0x0,
         &[(0xf, 0xf, 0), (0x2, 0xf, 0)],
     ))?;
-
     let battery_level = joycon.tick()?.info.battery_level();
-
+    println!("Battery level is {:?}", battery_level);
     joycon.set_player_light(light::PlayerLights::new(
         (battery_level >= BatteryLevel::Full).into(),
         (battery_level >= BatteryLevel::Medium).into(),
@@ -154,7 +157,11 @@ fn hid_main(mut joycon: JoyCon, opts: &Opts) -> Result<()> {
             PlayerLight::Blinking
         },
     ))?;
+    Ok(joycon)
+}
 
+fn hid_main(mut joycon: JoyCon, opts: &Opts) -> Result<()> {
+    joycon = hid_init_joycon(joycon)?;
     match opts.subcmd {
         SubCommand::Calibrate(ref calib) => match calib.subcmd {
             CalibrateE::Sticks => calibrate_sticks(&mut joycon)?,
