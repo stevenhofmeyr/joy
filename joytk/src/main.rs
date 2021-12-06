@@ -20,6 +20,7 @@ use joycon::{
 };
 use std::{
     convert::TryFrom,
+    fmt::Debug,
     fs::OpenOptions,
     io::{BufRead, Write},
     time::Duration,
@@ -62,6 +63,42 @@ fn main() -> Result<()> {
     }
 
     let api = HidApi::new()?;
+
+    let mut right_joycon = None;
+    //let mut left_joycon = None;
+
+    for device_info in api.device_list() {
+        if device_info.vendor_id() == NINTENDO_VENDOR_ID {
+            println!(
+                "HID device vendor ID: {:?}, product ID: {:?}, product: {:?}",
+                device_info.vendor_id(),
+                device_info.product_id(),
+                device_info.product_string()
+            );
+            if device_info.product_string() == Some("Joy-Con (R)") {
+                println!("Right joycon found");
+                let device = device_info
+                    .open_device(&api)
+                    .with_context(|| format!("error opening the HID device {:?}", device_info))?;
+                right_joycon = Some(JoyCon::new(device, device_info.clone())?);
+            } else if device_info.product_string() == Some("Joy-Con (L)") {
+                println!("Left joycon found");
+            }
+        }
+    }
+    /*
+    if right_joycon.is_none() {
+        eprintln!("Error running right joycon monitor");
+    } else {
+        hid_main(right_joycon.unwrap(), &opts).context("error running the command")?;
+    }*/
+
+    match right_joycon {
+        Some(joycon) => hid_main(joycon, &opts).context("error running the command")?,
+        None => eprintln!("Error running right joycon monitor"),
+    }
+
+    /*
     loop {
         if let Some(device_info) = api
             .device_list()
@@ -93,7 +130,7 @@ fn main() -> Result<()> {
         } else {
             sleep(Duration::from_millis(200));
         }
-    }
+    }*/
     Ok(())
 }
 
@@ -411,10 +448,11 @@ fn set_color(joycon: &mut JoyCon, arg: &SetColor) -> Result<()> {
 fn monitor(joycon: &mut JoyCon) -> Result<()> {
     joycon.enable_imu()?;
     joycon.load_calibration()?;
-    let mut orientation = Quaternion::one();
+    //let mut orientation = Quaternion::one();
     let mut now = Instant::now();
     loop {
         let report = joycon.tick()?;
+        /*
         let mut last_acc = Vector3::unit_x();
         let mut last_rot = Vector3::unit_x();
         for frame in &report.imu.unwrap() {
@@ -426,11 +464,13 @@ fn monitor(joycon: &mut JoyCon) -> Result<()> {
                 ));
             last_acc = frame.accel;
             last_rot = frame.gyro;
-        }
+        }*/
         if now.elapsed() > Duration::from_millis(100) {
             now = Instant::now();
-            println!("Clicked: {}", report.buttons);
-
+            if format!("{}", report.buttons) != "" {
+                println!("Clicked: {}", report.buttons);
+            }
+            /*
             let euler_rot = Euler::from(orientation);
             let pitch = Deg::from(euler_rot.x);
             let yaw = Deg::from(euler_rot.y);
@@ -441,6 +481,7 @@ fn monitor(joycon: &mut JoyCon) -> Result<()> {
             );
             println!("Rotation speed: {:#?}", last_rot);
             println!("Acceleration: {:?}", last_acc);
+            */
         }
     }
 }
