@@ -484,10 +484,10 @@ fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
         if now.elapsed() > Duration::from_millis(100) {
             now = Instant::now();
             if format!("{}", left_report.buttons) != "" {
-                println!("button.{}", left_report.buttons);
+                println!("{}", left_report.buttons);
             }
             if format!("{}", right_report.buttons) != "" {
-                println!("button.{}", right_report.buttons);
+                println!("{}", right_report.buttons);
             }
             /*
             let euler_rot = Euler::from(orientation);
