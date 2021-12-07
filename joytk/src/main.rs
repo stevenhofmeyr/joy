@@ -64,85 +64,67 @@ fn main() -> Result<()> {
 
     let api = HidApi::new()?;
 
-    let mut right_joycon = None;
-    let mut left_joycon = None;
+    //let mut right_device = None;
+    //let mut left_device = None;
+    //let mut right_joycon = None;
+    //let mut left_joycon = None;
+    let mut left_dev_info_opt = None;
+    let mut right_dev_info_opt = None;
 
-    for device_info in api.device_list() {
-        if device_info.vendor_id() == NINTENDO_VENDOR_ID {
-            println!(
-                "HID device vendor ID: {:?}, product ID: {:?}, product: {:?}",
-                device_info.vendor_id(),
-                device_info.product_id(),
-                device_info.product_string()
-            );
-            if device_info.product_string() == Some("Joy-Con (R)") {
-                println!("Right joycon found");
-                let device = device_info
-                    .open_device(&api)
-                    .with_context(|| format!("error opening the HID device {:?}", device_info))?;
-                right_joycon = Some(JoyCon::new(device, device_info.clone())?);
-            } else if device_info.product_string() == Some("Joy-Con (L)") {
-                println!("Left joycon found");
-                let device = device_info
-                    .open_device(&api)
-                    .with_context(|| format!("error opening the HID device {:?}", device_info))?;
-                left_joycon = Some(JoyCon::new(device, device_info.clone())?);
+    loop {
+        for device_info in api.device_list() {
+            if device_info.vendor_id() == NINTENDO_VENDOR_ID {
+                eprintln!(
+                    "HID device vendor ID: {:?}, product ID: {:?}, product: {:?}",
+                    device_info.vendor_id(),
+                    device_info.product_id(),
+                    device_info.product_string()
+                );
+                if device_info.product_string() == Some("Joy-Con (L)") {
+                    eprintln!("Left joycon found");
+                    left_dev_info_opt = Some(device_info.clone());
+                } else if device_info.product_string() == Some("Joy-Con (R)") {
+                    eprintln!("Right joycon found");
+                    right_dev_info_opt = Some(device_info.clone());
+                }
             }
         }
-    }
-    if left_joycon.is_none() || right_joycon.is_none() {
-        eprintln!(
-            "Error: didn't find both joycons: left {} right {}",
-            !left_joycon.is_none(),
-            !right_joycon.is_none()
-        );
-    } else {
-        hid_main(left_joycon.unwrap(), right_joycon.unwrap(), &opts)
-            .context("error running the command")?;
-    }
-    /*
-    match left_joycon {
-        Some(joycon) => hid_main(joycon, &opts).context("error running the command")?,
-        None => eprintln!("Error running right joycon monitor"),
-    }
-    match right_joycon {
-        Some(joycon) => hid_main(joycon, &opts).context("error running the command")?,
-        None => eprintln!("Error running right joycon monitor"),
-    }*/
-
-    /*
-    loop {
-        if let Some(device_info) = api
-            .device_list()
-            .find(|x| x.vendor_id() == NINTENDO_VENDOR_ID && HID_IDS.contains(&x.product_id()))
-        {
-            let device = device_info
-                .open_device(&api)
-                .with_context(|| format!("error opening the HID device {:?}", device_info))?;
-
-            if let SubCommand::Relay(ref r) = opts.subcmd {
-                #[cfg(target_os = "linux")]
-                {
-                    relay::relay(device, r).context("error during the relay")?;
-                }
-                #[cfg(not(target_os = "linux"))]
-                {
-                    anyhow::bail!("relaying only works on linux");
-                }
-            } else {
-                let joycon = JoyCon::new(device, device_info.clone())?;
-
-                hid_main(joycon, &opts).context("error running the command")?;
-            }
-
-            break;
-        } else if !opts.wait {
-            eprintln!("No device found");
+        if !right_dev_info_opt.is_none() && !left_dev_info_opt.is_none() {
             break;
         } else {
-            sleep(Duration::from_millis(200));
+            if !opts.wait {
+                break;
+            } else {
+                sleep(Duration::from_millis(200));
+            }
         }
-    }*/
+    }
+
+    if right_dev_info_opt.is_none() || left_dev_info_opt.is_none() {
+        eprintln!(
+            "Error: didn't find both joycons: left {} right {}",
+            !left_dev_info_opt.is_none(),
+            !right_dev_info_opt.is_none()
+        );
+    } else {
+        let left_dev_info = left_dev_info_opt.unwrap();
+        let left_device = left_dev_info
+            .open_device(&api)
+            .with_context(|| format!("error opening the HID device {:?}", left_dev_info))?;
+
+        let right_dev_info = right_dev_info_opt.unwrap();
+        let right_device = right_dev_info
+            .open_device(&api)
+            .with_context(|| format!("error opening the HID device {:?}", right_dev_info))?;
+        if let SubCommand::Relay(ref r) = opts.subcmd {
+            println!("Relay to switch...");
+            relay::relay(right_device, r).context("error during the relay")?;
+        } else {
+            let left_joycon = JoyCon::new(left_device, left_dev_info.clone())?;
+            let right_joycon = JoyCon::new(right_device, right_dev_info.clone())?;
+            hid_main(left_joycon, right_joycon, &opts).context("error running the command")?;
+        }
+    }
     Ok(())
 }
 
@@ -154,7 +136,7 @@ fn hid_init_joycon(mut joycon: JoyCon, lbl: &str) -> Result<JoyCon> {
         &[(0xf, 0xf, 0), (0x2, 0xf, 0)],
     ))?;
     let battery_level = joycon.tick()?.info.battery_level();
-    println!("{} Battery level is {:?}", lbl, battery_level);
+    eprintln!("{} Battery level is {:?}", lbl, battery_level);
     joycon.set_player_light(light::PlayerLights::new(
         (battery_level >= BatteryLevel::Full).into(),
         (battery_level >= BatteryLevel::Medium).into(),
@@ -191,17 +173,16 @@ fn hid_main(mut left_joycon: JoyCon, mut right_joycon: JoyCon, opts: &Opts) -> R
             get(&mut right_joycon)?;
         }
         SubCommand::Monitor => monitor(&mut left_joycon, &mut right_joycon)?,
+        SubCommand::Ringcon(ref cmd) => ringcon(&mut right_joycon, cmd)?,
+        SubCommand::PulseRate => pulse_rate(&mut right_joycon)?,
         _ => (),
         /*
         SubCommand::Set(ref set) => match set.subcmd {
             SetE::Color(ref arg) => set_color(&mut joycon, arg)?,
         },
-        SubCommand::Monitor => monitor(&mut joycon)?,
         SubCommand::Dump => dump(&mut joycon)?,
         SubCommand::Restore => restore(&mut joycon)?,
-        SubCommand::Ringcon(ref cmd) => ringcon(&mut joycon, cmd)?,
         SubCommand::Decode | SubCommand::Relay(_) => unreachable!(),
-        SubCommand::PulseRate => pulse_rate(&mut joycon)?,
         #[cfg(feature = "interface")]
         SubCommand::Tui => unreachable!(),
         SubCommand::Camera => camera::run(joycon)?,
@@ -503,10 +484,10 @@ fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
         if now.elapsed() > Duration::from_millis(100) {
             now = Instant::now();
             if format!("{}", left_report.buttons) != "" {
-                println!("Left joycon clicked: {}", left_report.buttons);
+                println!("button.{}", left_report.buttons);
             }
             if format!("{}", right_report.buttons) != "" {
-                println!("Right joycon clicked: {}", right_report.buttons);
+                println!("button.{}", right_report.buttons);
             }
             /*
             let euler_rot = Euler::from(orientation);

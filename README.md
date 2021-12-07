@@ -15,3 +15,22 @@ The tools can be run with `cargo run --bin <tool>`.
 - [`joycon`](https://yamakaky.github.io/joy/joycon): implements I/O and communication protocols on top of `joycon-sys`.
 - [`dualshock`](https://yamakaky.github.io/joy/dualshock): decoding HID reports from the DS4 controller.
 - [`hid-gamepad`](https://yamakaky.github.io/joy/hid_gamepad): abstraction above `dualshock` and `joycon`.
+
+# Notes
+
+## Pairing with the joycons
+
+When connecting the first time, first find the devices with
+
+`bluetoothctl scan on`
+
+Then using the MAC adresses from the scan, run
+
+`bluetoothctl connect <MAC_ADDR>`
+
+When trying to reconnect a previously discovered device, if it fails to find it, first do
+
+`bluetoothctl disconnect <MAX_ADDR>`
+
+Then repeat the scan and connect above.
+
