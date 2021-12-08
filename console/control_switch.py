@@ -8,9 +8,66 @@ import nxbt
 import argparse
 
 
-def connect_switch(pairing):
+def pair_switch():
+   # Init
+    print("[1] Attempting to initialize NXBT...")
+    nx = None
+    try:
+        nx = nxbt.Nxbt(pairing=True)
+    except Exception as e:
+        print("Failed to initialize:", e)
+        exit(1)
+    print("Successfully initialized NXBT.\n")
+    # Adapter Check
+    print("[2] Checking for Bluetooth adapter availability...")
+    adapters = None
+    try:
+        adapters = nx.get_available_adapters()
+    except Exception as e:
+        print("Failed to check for adapters:", e)
+        exit(1)
+    if len(adapters) < 1:
+        print("Unable to detect any Bluetooth adapters.")
+        print("Please ensure you system has Bluetooth capability.")
+        exit(1)
+    print(f"{len(adapters)} Bluetooth adapter(s) available.")
+    print("Adapters:", adapters, "\n")
+    # Creating a controller
+    print("[3] Please turn on your Switch and navigate to the 'Change Grip/Order menu.'")
+    input("Press Enter to continue...")
+    print("Creating a controller with the first Bluetooth adapter...")
+    cindex = None
+    try:
+        cindex = nx.create_controller(
+                 nxbt.PRO_CONTROLLER,
+                 adapters[0],
+                 colour_body=[255, 0, 0],
+                 colour_buttons=[255, 0, 0])
+    except Exception as e:
+        print("Failed to create a controller:", e)
+        exit(1)
+    print("Successfully created a controller.\n")
+    # Controller connection check
+    print("[4] Waiting for controller to connect with the Switch...")
+    timeout = 120
+    print(f"Connection timeout is {timeout} seconds for this test script.")
+    elapsed = 0
+    while nx.state[cindex]['state'] != 'connected':
+        if elapsed >= timeout:
+            print("Timeout reached, exiting...")
+            exit(1)
+        elif nx.state[cindex]['state'] == 'crashed':
+            print("An error occurred while connecting:")
+            print(nx.state[cindex]['errors'])
+            exit(1)
+        elapsed += 1
+        time.sleep(1)
+    print("Successfully connected.\n")
+
+
+def reconnect_switch():
     # Start the NXBT service
-    nx = nxbt.Nxbt()
+    nx = nxbt.Nxbt(pairing=False)
 
     # Get a list of all previously connected Switches
     addresses = nx.get_switch_addresses()
@@ -38,7 +95,7 @@ def relay_inputs(nx, controller):
     FIFO_NAME = 'joycons'
     os.mkfifo(FIFO_NAME)
     os.chmod(FIFO_NAME, mode=0x666)
-    print('Waiting for input on pipe', FIFO_NAME)
+    print('Waiting for  input on pipe', FIFO_NAME)
 
     try:
         f = open(FIFO_NAME)
@@ -107,10 +164,10 @@ def relay_inputs(nx, controller):
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(add_help=True)
     argparser.add_argument('--pair', action='store_true',
-                        help='Explicit pairing to connect to an unpaired switch the first time around')
+                           help='Explicit pairing to connect to an unpaired switch the first time around')
     options = argparser.parse_args()
-    nx, controller = connect_switch(options.pair)
+    #nx, controller = connect_switch(options.pair)
     if options.pair:
-        print('Connected for first time. Need to rerun in order to be able to use joycons too.')
-    else:
-        relay_inputs(nx, controller)
+        pair_switch()
+    nx, controller = reconnect_switch()
+    relay_inputs(nx, controller)
