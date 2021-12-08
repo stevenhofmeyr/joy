@@ -137,7 +137,7 @@ class Nxbt():
     This allows for thread-safe control of emulated controllers.
     """
 
-    def __init__(self, debug=False, log_to_file=False, disable_logging=False, pairing=False):
+    def __init__(self, debug=False, log_to_file=False, disable_logging=False, pairing=True):
         """Initializes the necessary multiprocessing resources and starts
         the multiprocessing processes.
 
@@ -787,7 +787,7 @@ class _ControllerManager():
         })
 
     def remove_controller(self, index):
-        
+
         self._children[index].terminate()
         self.state.pop(index, None)
 
