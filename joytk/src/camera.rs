@@ -15,6 +15,7 @@ use winit_input_helper::WinitInputHelper;
 #[derive(Debug)]
 enum Cmd {
     Image(GrayImage),
+    #[allow(dead_code)]
     Stop,
 }
 

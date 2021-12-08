@@ -1,26 +1,26 @@
 use anyhow::{Context, Result};
-use cgmath::{AbsDiffEq, Deg, Euler, One, Quaternion, Vector3};
+use cgmath::{Vector2, Vector3};
 use clap::Clap;
 use colored::Colorize;
 use joycon::{
-    hidapi::HidApi,
+    hidapi::{DeviceInfo, HidApi},
     joycon_sys::{
         accessory::AccessoryCommand,
         input::{BatteryLevel, InputReportEnum, Stick, UseSPIColors, WhichController},
         light::{self, PlayerLight},
         mcu::ir::Resolution,
         output::OutputReportEnum,
-        spi::{
-            ControllerColor, SPIRange, SensorCalibration, SticksCalibration, UserSensorCalibration,
-            UserSticksCalibration,
-        },
-        InputReport, OutputReport, HID_IDS, NINTENDO_VENDOR_ID,
+        spi::{ControllerColor, SPIRange, SensorCalibration, SticksCalibration, UserSensorCalibration, UserSticksCalibration},
+        //InputReport, OutputReport, HID_IDS, NINTENDO_VENDOR_ID,
+        InputReport,
+        OutputReport,
+        NINTENDO_VENDOR_ID,
     },
-    JoyCon,
+    JoyCon, Report,
 };
 use std::{
     convert::TryFrom,
-    fmt::Debug,
+    //fmt::Debug,
     fs::OpenOptions,
     io::{BufRead, Write},
     time::Duration,
@@ -36,6 +36,12 @@ mod opts;
 mod relay;
 
 use opts::*;
+
+#[derive(strum_macros::Display)]
+enum SIDE {
+    LEFT,
+    RIGHT,
+}
 
 fn main() -> Result<()> {
     let formatter = tracing_subscriber::fmt()
@@ -64,10 +70,6 @@ fn main() -> Result<()> {
 
     let api = HidApi::new()?;
 
-    //let mut right_device = None;
-    //let mut left_device = None;
-    //let mut right_joycon = None;
-    //let mut left_joycon = None;
     let mut left_dev_info_opt = None;
     let mut right_dev_info_opt = None;
 
@@ -107,34 +109,32 @@ fn main() -> Result<()> {
             !right_dev_info_opt.is_none()
         );
     } else {
-        let left_dev_info = left_dev_info_opt.unwrap();
-        let left_device = left_dev_info
-            .open_device(&api)
-            .with_context(|| format!("error opening the HID device {:?}", left_dev_info))?;
-
-        let right_dev_info = right_dev_info_opt.unwrap();
-        let right_device = right_dev_info
-            .open_device(&api)
-            .with_context(|| format!("error opening the HID device {:?}", right_dev_info))?;
         if let SubCommand::Relay(ref r) = opts.subcmd {
-            println!("Relay to switch...");
+            eprintln!("Relay to switch...");
+            let right_dev_info = right_dev_info_opt.unwrap();
+            let right_device = right_dev_info
+                .open_device(&api)
+                .with_context(|| format!("error opening the HID device {:?}", right_dev_info))?;
             relay::relay(right_device, r).context("error during the relay")?;
         } else {
-            let left_joycon = JoyCon::new(left_device, left_dev_info.clone())?;
-            let right_joycon = JoyCon::new(right_device, right_dev_info.clone())?;
+            let left_joycon = get_joycon(left_dev_info_opt.unwrap(), &api)?;
+            let right_joycon = get_joycon(right_dev_info_opt.unwrap(), &api)?;
             hid_main(left_joycon, right_joycon, &opts).context("error running the command")?;
         }
     }
     Ok(())
 }
 
+fn get_joycon(device_info: DeviceInfo, api: &HidApi) -> Result<JoyCon> {
+    let device = device_info
+        .open_device(&api)
+        .with_context(|| format!("error opening the HID device {:?}", device_info))?;
+    let joycon = JoyCon::new(device, device_info.clone())?;
+    Ok(joycon)
+}
+
 fn hid_init_joycon(mut joycon: JoyCon, lbl: &str) -> Result<JoyCon> {
-    joycon.set_home_light(light::HomeLight::new(
-        0x8,
-        0x2,
-        0x0,
-        &[(0xf, 0xf, 0), (0x2, 0xf, 0)],
-    ))?;
+    joycon.set_home_light(light::HomeLight::new(0x8, 0x2, 0x0, &[(0xf, 0xf, 0), (0x2, 0xf, 0)]))?;
     let battery_level = joycon.tick()?.info.battery_level();
     eprintln!("{} Battery level is {:?}", lbl, battery_level);
     joycon.set_player_light(light::PlayerLights::new(
@@ -173,20 +173,18 @@ fn hid_main(mut left_joycon: JoyCon, mut right_joycon: JoyCon, opts: &Opts) -> R
             get(&mut right_joycon)?;
         }
         SubCommand::Monitor => monitor(&mut left_joycon, &mut right_joycon)?,
+
         SubCommand::Ringcon(ref cmd) => ringcon(&mut right_joycon, cmd)?,
         SubCommand::PulseRate => pulse_rate(&mut right_joycon)?,
-        _ => (),
-        /*
         SubCommand::Set(ref set) => match set.subcmd {
-            SetE::Color(ref arg) => set_color(&mut joycon, arg)?,
+            SetE::Color(ref arg) => set_color(&mut right_joycon, arg)?,
         },
-        SubCommand::Dump => dump(&mut joycon)?,
-        SubCommand::Restore => restore(&mut joycon)?,
+        SubCommand::Dump => dump(&mut right_joycon)?,
+        SubCommand::Restore => restore(&mut right_joycon)?,
         SubCommand::Decode | SubCommand::Relay(_) => unreachable!(),
         #[cfg(feature = "interface")]
         SubCommand::Tui => unreachable!(),
-        SubCommand::Camera => camera::run(joycon)?,
-        */
+        SubCommand::Camera => camera::run(right_joycon)?,
     }
     Ok(())
 }
@@ -199,9 +197,7 @@ fn pulse_rate(joycon: &mut JoyCon) -> Result<()> {
         let report = joycon.recv()?;
         if let Some(mcu) = report.mcu_report() {
             if let Some(frame) = mcu.ir_data() {
-                if let Some(img) =
-                    image::GrayImage::from_raw(11, 27, frame.img_fragment[0..11 * 27].to_vec())
-                {
+                if let Some(img) = image::GrayImage::from_raw(11, 27, frame.img_fragment[0..11 * 27].to_vec()) {
                     img.save(format!("/tmp/pulse{:05}.png", i))?;
                     i += 1;
                 }
@@ -217,10 +213,7 @@ fn reset_calibration(joycon: &mut JoyCon) -> Result<()> {
 }
 
 fn dump(joycon: &mut JoyCon) -> Result<()> {
-    let mut out = OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .open("/tmp/out.raw")?;
+    let mut out = OpenOptions::new().write(true).truncate(true).open("/tmp/out.raw")?;
     let mut offset = 0;
     let size = 0x1D;
     // TODO: why value
@@ -258,22 +251,8 @@ fn calibrate_gyro(joycon: &mut JoyCon) -> Result<()> {
         let now = Instant::now();
         while now.elapsed() < Duration::from_secs(1) {
             let report = joycon.tick()?;
-            gyro_reports.extend(
-                report
-                    .raw
-                    .imu_frames()
-                    .unwrap()
-                    .iter()
-                    .map(|x| x.raw_gyro()),
-            );
-            acc_reports.extend(
-                report
-                    .raw
-                    .imu_frames()
-                    .unwrap()
-                    .iter()
-                    .map(|x| x.raw_accel()),
-            );
+            gyro_reports.extend(report.raw.imu_frames().unwrap().iter().map(|x| x.raw_gyro()));
+            acc_reports.extend(report.raw.imu_frames().unwrap().iter().map(|x| x.raw_accel()));
         }
     }
     println!();
@@ -464,58 +443,41 @@ fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
     right_joycon.enable_imu()?;
     right_joycon.load_calibration()?;
 
-    let mut orientation = Quaternion::one();
     let mut now = Instant::now();
     loop {
         let left_report = left_joycon.tick()?;
         let right_report = right_joycon.tick()?;
+        // NOTE: the default update interval for the joycons to switch is 15ms
         if now.elapsed() > Duration::from_millis(1000) {
             now = Instant::now();
-            if format!("{}", left_report.buttons) != "" {
-                print!("{}", left_report.buttons);
-            }
-            if format!("{}", right_report.buttons) != "" {
-                print!("{}", right_report.buttons);
-            }
-            if left_report.left_stick.x.abs() > 0.1 || left_report.left_stick.y.abs() > 0.1 {
-                print!(
-                    "<L,{:.2},{:.2}> ",
-                    left_report.left_stick.x, left_report.left_stick.y,
-                );
-            }
-            if right_report.right_stick.x.abs() > 0.1 || right_report.right_stick.y.abs() > 0.1 {
-                print!(
-                    "<R,{:.2},{:.2}> ",
-                    right_report.right_stick.x, right_report.right_stick.y,
-                );
-                std::io::stdout().flush()?;
-            }
+            monitor_one_joycon(left_report, SIDE::LEFT)?;
+            monitor_one_joycon(right_report, SIDE::RIGHT)?;
             std::io::stdout().flush()?;
-
-            let mut last_acc = Vector3::unit_x();
-            let mut last_rot = Vector3::unit_x();
-            for frame in &right_report.imu.unwrap() {
-                orientation = orientation
-                    * Quaternion::from(Euler::new(
-                        Deg(frame.gyro.y * 0.005),
-                        Deg(frame.gyro.z * 0.005),
-                        Deg(frame.gyro.x * 0.005),
-                    ));
-                last_acc = frame.accel;
-                last_rot = frame.gyro;
-            }
-            let euler_rot = Euler::from(orientation);
-            let pitch = Deg::from(euler_rot.x);
-            let yaw = Deg::from(euler_rot.y);
-            let roll = Deg::from(euler_rot.z);
-            println!(
-                "Rotation: pitch {:?}, yaw {:?}, roll {:?}",
-                pitch, yaw, roll
-            );
-            println!("Rotation speed: {:#?}", last_rot);
-            println!("Acceleration: {:?}", last_acc);
         }
     }
+}
+
+fn monitor_one_joycon(report: Report, side: SIDE) -> Result<()> {
+    if format!("{}", report.buttons) != "" {
+        print!("{}", report.buttons);
+    }
+    let stick: Vector2<f64>;
+    match side {
+        SIDE::LEFT => stick = report.left_stick,
+        SIDE::RIGHT => stick = report.right_stick,
+    };
+    if stick.x.abs() > 0.1 || stick.y.abs() > 0.1 {
+        print!("<STICK,{},{:.2},{:.2}> ", side, stick.x, stick.y,);
+    }
+    let mut last_acc = Vector3::unit_x();
+    let mut last_rot = Vector3::unit_x();
+    for frame in &report.imu.unwrap() {
+        last_acc = frame.accel;
+        last_rot = frame.gyro;
+    }
+    print!("<ROT,{},{:.2},{:.2},{:.2}> ", side, last_rot.x, last_rot.y, last_rot.z);
+    print!("<ACC,{},{:.2},{:.2},{:.2}> ", side, last_acc.x, last_acc.y, last_acc.z);
+    Ok(())
 }
 
 fn decode() -> anyhow::Result<()> {
