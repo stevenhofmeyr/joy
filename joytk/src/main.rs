@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use cgmath::{Deg, Euler, One, Quaternion, Vector3};
+use cgmath::{AbsDiffEq, Deg, Euler, One, Quaternion, Vector3};
 use clap::Clap;
 use colored::Colorize;
 use joycon::{
@@ -463,33 +463,47 @@ fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
     left_joycon.load_calibration()?;
     right_joycon.enable_imu()?;
     right_joycon.load_calibration()?;
-    //let mut orientation = Quaternion::one();
+
+    let mut orientation = Quaternion::one();
     let mut now = Instant::now();
     loop {
         let left_report = left_joycon.tick()?;
         let right_report = right_joycon.tick()?;
-        /*
-        let mut last_acc = Vector3::unit_x();
-        let mut last_rot = Vector3::unit_x();
-        for frame in &report.imu.unwrap() {
-            orientation = orientation
-                * Quaternion::from(Euler::new(
-                    Deg(frame.gyro.y * 0.005),
-                    Deg(frame.gyro.z * 0.005),
-                    Deg(frame.gyro.x * 0.005),
-                ));
-            last_acc = frame.accel;
-            last_rot = frame.gyro;
-        }*/
-        if now.elapsed() > Duration::from_millis(100) {
+        if now.elapsed() > Duration::from_millis(1000) {
             now = Instant::now();
             if format!("{}", left_report.buttons) != "" {
-                println!("{}", left_report.buttons);
+                print!("{}", left_report.buttons);
             }
             if format!("{}", right_report.buttons) != "" {
-                println!("{}", right_report.buttons);
+                print!("{}", right_report.buttons);
             }
-            /*
+            if left_report.left_stick.x.abs() > 0.1 || left_report.left_stick.y.abs() > 0.1 {
+                print!(
+                    "<L,{:.2},{:.2}> ",
+                    left_report.left_stick.x, left_report.left_stick.y,
+                );
+            }
+            if right_report.right_stick.x.abs() > 0.1 || right_report.right_stick.y.abs() > 0.1 {
+                print!(
+                    "<R,{:.2},{:.2}> ",
+                    right_report.right_stick.x, right_report.right_stick.y,
+                );
+                std::io::stdout().flush()?;
+            }
+            std::io::stdout().flush()?;
+
+            let mut last_acc = Vector3::unit_x();
+            let mut last_rot = Vector3::unit_x();
+            for frame in &right_report.imu.unwrap() {
+                orientation = orientation
+                    * Quaternion::from(Euler::new(
+                        Deg(frame.gyro.y * 0.005),
+                        Deg(frame.gyro.z * 0.005),
+                        Deg(frame.gyro.x * 0.005),
+                    ));
+                last_acc = frame.accel;
+                last_rot = frame.gyro;
+            }
             let euler_rot = Euler::from(orientation);
             let pitch = Deg::from(euler_rot.x);
             let yaw = Deg::from(euler_rot.y);
@@ -500,7 +514,6 @@ fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
             );
             println!("Rotation speed: {:#?}", last_rot);
             println!("Acceleration: {:?}", last_acc);
-            */
         }
     }
 }

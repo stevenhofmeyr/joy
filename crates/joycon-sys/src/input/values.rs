@@ -66,64 +66,64 @@ impl fmt::Debug for ButtonsStatus {
 impl fmt::Display for ButtonsStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.right.a() {
-            write!(f, ".A")?;
+            write!(f, "A ")?;
         }
         if self.right.b() {
-            write!(f, ".B")?;
+            write!(f, "B ")?;
         }
         if self.right.x() {
-            write!(f, ".X")?;
+            write!(f, "X ")?;
         }
         if self.right.y() {
-            write!(f, ".Y")?;
+            write!(f, "Y ")?;
         }
         if self.left.up() {
-            write!(f, ".UP")?;
+            write!(f, "DPAD_UP ")?;
         }
         if self.left.down() {
-            write!(f, ".DOWN")?;
+            write!(f, "DPAD_DOWN ")?;
         }
         if self.left.left() {
-            write!(f, ".LEFT")?;
+            write!(f, "DPAD_LEFT ")?;
         }
         if self.left.right() {
-            write!(f, ".RIGHT")?;
+            write!(f, "DPAD_RIGHT ")?;
         }
         if self.left.l() {
-            write!(f, ".L")?;
+            write!(f, "L ")?;
         }
         if self.left.zl() {
-            write!(f, ".ZL")?;
+            write!(f, "ZL ")?;
         }
         if self.right.r() {
-            write!(f, ".R")?;
+            write!(f, "R ")?;
         }
         if self.right.zr() {
-            write!(f, ".ZR")?;
+            write!(f, "ZR ")?;
         }
         if self.left.sl() || self.right.sl() {
-            write!(f, ".SL")?;
+            write!(f, "JCL_SL ")?;
         }
         if self.left.sr() || self.right.sr() {
-            write!(f, ".SR")?;
+            write!(f, "JCL_SR ")?;
         }
         if self.middle.lstick() {
-            write!(f, ".L3")?;
+            write!(f, "L_STICK_PRESS ")?;
         }
         if self.middle.rstick() {
-            write!(f, ".R3")?;
+            write!(f, "R_STICK_PRESS ")?;
         }
         if self.middle.minus() {
-            write!(f, ".-")?;
+            write!(f, "MINUS ")?;
         }
         if self.middle.plus() {
-            write!(f, ".+")?;
+            write!(f, "PLUS ")?;
         }
         if self.middle.capture() {
-            write!(f, ".CAPTURE")?;
+            write!(f, "CAPTURE ")?;
         }
         if self.middle.home() {
-            write!(f, ".HOME")?;
+            write!(f, "HOME ")?;
         }
         Ok(())
     }
