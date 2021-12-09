@@ -117,10 +117,8 @@ def process_stick(nx, controller, input):
     side = fields[1]
     x = float(fields[2])
     y = float(fields[3])
-    #if side == 'LEFT':
-    #    y = -y
     print("STICK", side, x, y)
-    nx.tilt_stick(controller, side[0] + "_STICK", int(100 * x), int(100 * y), block=True)
+    nx.tilt_stick(controller, side[0] + "_STICK", int(100 * x), int(100 * y), block=False)
     return True
 
 
@@ -130,51 +128,52 @@ def process_buttons(nx, controller, input):
         return False
     DOWN = 0.1
     UP = 0.1
+    BLOCK = False
     for button in fields[1:]:
         if nx is None:
             print("BUTTON", button)
             sys.stdout.flush()
             continue
         if button == "A":
-            nx.press_buttons(controller, [nxbt.Buttons.A], down=DOWN, up=UP)
+            nx.press_buttons(controller, [nxbt.Buttons.A], down=DOWN, up=UP, block=BLOCK)
         elif button == "B":
-            nx.press_buttons(controller, [nxbt.Buttons.B], down=DOWN, up=UP)
+            nx.press_buttons(controller, [nxbt.Buttons.B], down=DOWN, up=UP, block=BLOCK)
         elif button == "X":
-            nx.press_buttons(controller, [nxbt.Buttons.X], down=DOWN, up=UP)
+            nx.press_buttons(controller, [nxbt.Buttons.X], down=DOWN, up=UP, block=BLOCK)
         elif button == "Y":
-            nx.press_buttons(controller, [nxbt.Buttons.Y], down=DOWN, up=UP)
+            nx.press_buttons(controller, [nxbt.Buttons.Y], down=DOWN, up=UP, block=BLOCK)
         elif button == "DPAD_UP":
-            nx.press_buttons(controller, [nxbt.Buttons.DPAD_UP], down=DOWN, up=UP)
+            nx.press_buttons(controller, [nxbt.Buttons.DPAD_UP], down=DOWN, up=UP, block=BLOCK)
         elif button == "DPAD_DOWN":
-            nx.press_buttons(controller, [nxbt.Buttons.DPAD_DOWN], down=DOWN, up=UP)
+            nx.press_buttons(controller, [nxbt.Buttons.DPAD_DOWN], down=DOWN, up=UP, block=BLOCK)
         elif button == "DPAD_LEFT":
-            nx.press_buttons(controller, [nxbt.Buttons.DPAD_LEFT], down=DOWN, up=UP)
+            nx.press_buttons(controller, [nxbt.Buttons.DPAD_LEFT], down=DOWN, up=UP, block=BLOCK)
         elif button == "DPAD_RIGHT":
-            nx.press_buttons(controller, [nxbt.Buttons.DPAD_RIGHT], down=DOWN, up=UP)
+            nx.press_buttons(controller, [nxbt.Buttons.DPAD_RIGHT], down=DOWN, up=UP, block=BLOCK)
         elif button == "L":
-            nx.press_buttons(controller, [nxbt.Buttons.L], down=DOWN, up=UP)
+            nx.press_buttons(controller, [nxbt.Buttons.L], down=DOWN, up=UP, block=BLOCK)
         elif button == "ZL":
-            nx.press_buttons(controller, [nxbt.Buttons.ZL], down=DOWN, up=UP)
+            nx.press_buttons(controller, [nxbt.Buttons.ZL], down=DOWN, up=UP, block=BLOCK)
         elif button == "R":
-            nx.press_buttons(controller, [nxbt.Buttons.R], down=DOWN, up=UP)
+            nx.press_buttons(controller, [nxbt.Buttons.R], down=DOWN, up=UP, block=BLOCK)
         elif button == "ZR":
-            nx.press_buttons(controller, [nxbt.Buttons.ZR], down=DOWN, up=UP)
+            nx.press_buttons(controller, [nxbt.Buttons.ZR], down=DOWN, up=UP, block=BLOCK)
         elif button == "JCL_SL":
-            nx.press_buttons(controller, [nxbt.Buttons.JCL_SL], down=DOWN, up=UP)
+            nx.press_buttons(controller, [nxbt.Buttons.JCL_SL], down=DOWN, up=UP, block=BLOCK)
         elif button == "JCL_SR":
-            nx.press_buttons(controller, [nxbt.Buttons.JCL_SR], down=DOWN, up=UP)
+            nx.press_buttons(controller, [nxbt.Buttons.JCL_SR], down=DOWN, up=UP, block=BLOCK)
         elif button == "L_STICK_PRESS":
-            nx.press_buttons(controller, [nxbt.Buttons.L_STICK_PRESS], down=DOWN, up=UP)
+            nx.press_buttons(controller, [nxbt.Buttons.L_STICK_PRESS], down=DOWN, up=UP, block=BLOCK)
         elif button == "R_STICK_PRESS":
-            nx.press_buttons(controller, [nxbt.Buttons.R_STICK_PRESS], down=DOWN, up=UP)
+            nx.press_buttons(controller, [nxbt.Buttons.R_STICK_PRESS], down=DOWN, up=UP, block=BLOCK)
         elif button == "MINUS":
-            nx.press_buttons(controller, [nxbt.Buttons.MINUS], down=DOWN, up=UP)
+            nx.press_buttons(controller, [nxbt.Buttons.MINUS], down=DOWN, up=UP, block=BLOCK)
         elif button == "PLUS":
-            nx.press_buttons(controller, [nxbt.Buttons.PLUS], down=DOWN, up=UP)
+            nx.press_buttons(controller, [nxbt.Buttons.PLUS], down=DOWN, up=UP, block=BLOCK)
         elif button == "CAPTURE":
-            nx.press_buttons(controller, [nxbt.Buttons.CAPTURE], down=DOWN, up=UP)
+            nx.press_buttons(controller, [nxbt.Buttons.CAPTURE], down=DOWN, up=UP, block=BLOCK)
         elif button == "HOME":
-            nx.press_buttons(controller, [nxbt.Buttons.HOME], down=DOWN, up=UP)
+            nx.press_buttons(controller, [nxbt.Buttons.HOME], down=DOWN, up=UP, block=BLOCK)
         else:
             print("Unrecognized input:", button)
     return True
