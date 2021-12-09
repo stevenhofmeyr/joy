@@ -457,18 +457,18 @@ fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
 }
 
 fn monitor_one_joycon(report: Report, side: SIDE) -> Result<()> {
-    if format!("{}", report.buttons) != "" {
-        println!("{}", report.buttons);
-    }
+    //if format!("{}", report.buttons) != "" {
+    println!("{}", report.buttons);
+    //}
+    /*
     let stick: Vector2<f64>;
     match side {
         SIDE::LEFT => stick = report.left_stick,
         SIDE::RIGHT => stick = report.right_stick,
     };
-    if stick.x.abs() > 0.1 || stick.y.abs() > 0.1 {
-        println!("STICK,{},{:.2},{:.2} ", side, stick.x, stick.y);
-    }
-    /*
+    //if stick.x.abs() > 0.1 || stick.y.abs() > 0.1 {
+    println!("STICK,{},{:.2},{:.2} ", side, stick.x, stick.y);
+    //}
     // the last in the triple is the rotational speed
     let frame = report.imu.unwrap()[2];
     let acc = frame.accel;

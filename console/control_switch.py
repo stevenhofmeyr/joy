@@ -5,8 +5,13 @@
 import os
 import sys
 import time
-import nxbt
 import argparse
+
+import nxbt
+import nxbt.tui
+
+
+nxbt_buttons = [b for b in dir(nxbt.Buttons) if not b.startswith("__")]
 
 
 def pair_switch():
@@ -91,8 +96,8 @@ def reconnect_switch():
     return nx, controller
 
 
-def process_ringcon(nx, controller, input):
-    fields = input.split(",")
+def process_ringcon(nx, controller, input_val):
+    fields = input_val.split(",")
     if len(fields) > 0 and fields[0] != "RING":
         return False
     flex = fields[1]
@@ -101,8 +106,8 @@ def process_ringcon(nx, controller, input):
     return True
 
 
-def process_movement(nx, controller, input):
-    fields = input.split(",")
+def process_movement(nx, controller, input_val):
+    fields = input_val.split(",")
     if len(fields) > 0 and fields[0] != "ROT" and fields[0] != "ACC":
         return False
     side, x, y, z = fields[1:]
@@ -110,8 +115,8 @@ def process_movement(nx, controller, input):
     return True
 
 
-def process_stick(nx, controller, input):
-    fields = input.split(",")
+def process_stick(nx, controller, input_val):
+    fields = input_val.split(",")
     if len(fields) > 0 and fields[0] != "STICK":
         return False
     side = fields[1]
@@ -122,92 +127,66 @@ def process_stick(nx, controller, input):
     return True
 
 
-def process_buttons(nx, controller, input):
-    fields = input.split(",")
+def process_buttons(tui, input_val, pressed_buttons, new_pressed_buttons):
+    fields = input_val.split(",")
     if len(fields) > 0 and fields[0] != "BUTTONS":
         return False
-    DOWN = 0.1
-    UP = 0.1
-    BLOCK = False
     for button in fields[1:]:
-        if nx is None:
-            print("BUTTON", button)
-            sys.stdout.flush()
-            continue
-        if button == "A":
-            nx.press_buttons(controller, [nxbt.Buttons.A], down=DOWN, up=UP, block=BLOCK)
-        elif button == "B":
-            nx.press_buttons(controller, [nxbt.Buttons.B], down=DOWN, up=UP, block=BLOCK)
-        elif button == "X":
-            nx.press_buttons(controller, [nxbt.Buttons.X], down=DOWN, up=UP, block=BLOCK)
-        elif button == "Y":
-            nx.press_buttons(controller, [nxbt.Buttons.Y], down=DOWN, up=UP, block=BLOCK)
-        elif button == "DPAD_UP":
-            nx.press_buttons(controller, [nxbt.Buttons.DPAD_UP], down=DOWN, up=UP, block=BLOCK)
-        elif button == "DPAD_DOWN":
-            nx.press_buttons(controller, [nxbt.Buttons.DPAD_DOWN], down=DOWN, up=UP, block=BLOCK)
-        elif button == "DPAD_LEFT":
-            nx.press_buttons(controller, [nxbt.Buttons.DPAD_LEFT], down=DOWN, up=UP, block=BLOCK)
-        elif button == "DPAD_RIGHT":
-            nx.press_buttons(controller, [nxbt.Buttons.DPAD_RIGHT], down=DOWN, up=UP, block=BLOCK)
-        elif button == "L":
-            nx.press_buttons(controller, [nxbt.Buttons.L], down=DOWN, up=UP, block=BLOCK)
-        elif button == "ZL":
-            nx.press_buttons(controller, [nxbt.Buttons.ZL], down=DOWN, up=UP, block=BLOCK)
-        elif button == "R":
-            nx.press_buttons(controller, [nxbt.Buttons.R], down=DOWN, up=UP, block=BLOCK)
-        elif button == "ZR":
-            nx.press_buttons(controller, [nxbt.Buttons.ZR], down=DOWN, up=UP, block=BLOCK)
-        elif button == "JCL_SL":
-            nx.press_buttons(controller, [nxbt.Buttons.JCL_SL], down=DOWN, up=UP, block=BLOCK)
-        elif button == "JCL_SR":
-            nx.press_buttons(controller, [nxbt.Buttons.JCL_SR], down=DOWN, up=UP, block=BLOCK)
-        elif button == "L_STICK_PRESS":
-            nx.press_buttons(controller, [nxbt.Buttons.L_STICK_PRESS], down=DOWN, up=UP, block=BLOCK)
-        elif button == "R_STICK_PRESS":
-            nx.press_buttons(controller, [nxbt.Buttons.R_STICK_PRESS], down=DOWN, up=UP, block=BLOCK)
-        elif button == "MINUS":
-            nx.press_buttons(controller, [nxbt.Buttons.MINUS], down=DOWN, up=UP, block=BLOCK)
-        elif button == "PLUS":
-            nx.press_buttons(controller, [nxbt.Buttons.PLUS], down=DOWN, up=UP, block=BLOCK)
-        elif button == "CAPTURE":
-            nx.press_buttons(controller, [nxbt.Buttons.CAPTURE], down=DOWN, up=UP, block=BLOCK)
-        elif button == "HOME":
-            nx.press_buttons(controller, [nxbt.Buttons.HOME], down=DOWN, up=UP, block=BLOCK)
+        if button in nxbt_buttons:
+            if pressed_buttons.pop(button, None) == None:
+                print("on_press({})".format(button))
+                if tui is not None:
+                    tui.on_press(button)
+            new_pressed_buttons[button] = True
         else:
             print("Unrecognized input:", button)
     return True
 
 
-def relay_inputs(nx, controller):
+def relay_inputs(tui):
     FIFO_NAME = "joycons"
     os.mkfifo(FIFO_NAME)
     os.chmod(FIFO_NAME, mode=0o666)
 
+    if tui is not None:
+        tui.direct_input_loop(tui.term, run_loop=False)
+
+    pressed_buttons = {}
     print("Waiting for input on pipe", FIFO_NAME)
     try:
         f = open(FIFO_NAME, "r")
-        while True:
+        done = False
+        while not done:
             data = f.readline()
             if len(data) == 0:
                 continue
-            inputs = "{0}".format(data).split(" ")
-            print(inputs)
+            input_vals = "{0}".format(data).split(" ")
+            # print(input_vals)
             sys.stdout.flush()
-            for input in inputs:
-                input = input.strip()
-                if "quit" in input:
+            new_pressed_buttons = {}
+            for input_val in input_vals:
+                input_val = input_val.strip()
+                if "quit" in input_val:
                     print("Done with controller")
+                    done = True
                     break
-                process_buttons(nx, controller, input)
-                process_stick(nx, controller, input)
-                process_movement(nx, controller, input)
-                process_ringcon(nx, controller, input)
+                process_buttons(tui, input_val, pressed_buttons, new_pressed_buttons)
+                # process_stick(nx, controller, input_val)
+                # process_movement(nx, controller, input_val)
+                # process_ringcon(nx, controller, input_val)
+            # clear out buttons that are no longer pressed
+            for button in pressed_buttons:
+                print("on_release({})".format(button))
+                if tui is not None:
+                    tui.on_release(button)
+            # keep track of all currently pressed buttons
+            pressed_buttons = new_pressed_buttons
+            print("currently pressed buttons", pressed_buttons)
 
     finally:
         os.remove(FIFO_NAME)
-        if nx:
-            nx.remove_controller(controller)
+        if tui is not None:
+            tui.shutdown_direct_loop()
 
 
 if __name__ == "__main__":
@@ -226,7 +205,9 @@ if __name__ == "__main__":
     if options.pair:
         pair_switch()
     if options.test_inputs:
-        relay_inputs(None, None)
+        relay_inputs(None)
     else:
         nx, controller = reconnect_switch()
-        relay_inputs(nx, controller)
+        tui = nxbt.tui.InputTUI()
+        relay_inputs(tui)
+        nx.remove_controller(controller)

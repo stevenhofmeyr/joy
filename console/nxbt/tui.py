@@ -9,9 +9,9 @@ from blessed import Terminal
 from .nxbt import Nxbt, PRO_CONTROLLER
 
 
-class LoadingSpinner():
+class LoadingSpinner:
 
-    SPINNER_CHARS = ['■ □ □ □', '□ ■ □ □', '□ □ ■ □', '□ □ □ ■', '□ □ □ ■', '□ □ ■ □', '□ ■ □ □', '■ □ □ □']  # noqa
+    SPINNER_CHARS = ["■ □ □ □", "□ ■ □ □", "□ □ ■ □", "□ □ □ ■", "□ □ □ ■", "□ □ ■ □", "□ ■ □ □", "■ □ □ □"]  # noqa
 
     def __init__(self):
 
@@ -35,7 +35,7 @@ class LoadingSpinner():
         return self.SPINNER_CHARS[self.current_char_index]
 
 
-class ControllerTUI():
+class ControllerTUI:
 
     CONTROLS = {
         "ZL": "◿□□□□",
@@ -124,30 +124,30 @@ class ControllerTUI():
                 if pressed_time is not False and current_time - pressed_time > 0.25:
                     self.deactivate_control(control)
 
-        ZL = self.CONTROLS['ZL']
-        L = self.CONTROLS['L']
-        ZR = self.CONTROLS['ZR']
-        R = self.CONTROLS['R']
-        LU = self.CONTROLS['LS_UP']
-        LL = self.CONTROLS['LS_LEFT']
-        LR = self.CONTROLS['LS_RIGHT']
-        LD = self.CONTROLS['LS_DOWN']
-        RU = self.CONTROLS['RS_UP']
-        RL = self.CONTROLS['RS_LEFT']
-        RR = self.CONTROLS['RS_RIGHT']
-        RD = self.CONTROLS['RS_DOWN']
-        DU = self.CONTROLS['DPAD_UP']
-        DL = self.CONTROLS['DPAD_LEFT']
-        DR = self.CONTROLS['DPAD_RIGHT']
-        DD = self.CONTROLS['DPAD_DOWN']
-        MN = self.CONTROLS['MINUS']
-        PL = self.CONTROLS['PLUS']
-        HM = self.CONTROLS['HOME']
-        CP = self.CONTROLS['CAPTURE']
-        A = self.CONTROLS['A']
-        B = self.CONTROLS['B']
-        X = self.CONTROLS['X']
-        Y = self.CONTROLS['Y']
+        ZL = self.CONTROLS["ZL"]
+        L = self.CONTROLS["L"]
+        ZR = self.CONTROLS["ZR"]
+        R = self.CONTROLS["R"]
+        LU = self.CONTROLS["LS_UP"]
+        LL = self.CONTROLS["LS_LEFT"]
+        LR = self.CONTROLS["LS_RIGHT"]
+        LD = self.CONTROLS["LS_DOWN"]
+        RU = self.CONTROLS["RS_UP"]
+        RL = self.CONTROLS["RS_LEFT"]
+        RR = self.CONTROLS["RS_RIGHT"]
+        RD = self.CONTROLS["RS_DOWN"]
+        DU = self.CONTROLS["DPAD_UP"]
+        DL = self.CONTROLS["DPAD_LEFT"]
+        DR = self.CONTROLS["DPAD_RIGHT"]
+        DD = self.CONTROLS["DPAD_DOWN"]
+        MN = self.CONTROLS["MINUS"]
+        PL = self.CONTROLS["PLUS"]
+        HM = self.CONTROLS["HOME"]
+        CP = self.CONTROLS["CAPTURE"]
+        A = self.CONTROLS["A"]
+        B = self.CONTROLS["B"]
+        X = self.CONTROLS["X"]
+        Y = self.CONTROLS["Y"]
 
         if self.remote_connection:
             lr_press = "L + R - - - - - - - - -▷ E"
@@ -170,83 +170,24 @@ class ControllerTUI():
         print(self.term.center(f"│╱                          ╲│   {lr_press} "))
 
 
-class InputTUI():
+class InputTUI:
 
     KEYMAP = {
         # Left Stick Mapping
-        "w": {
-            "control": "LS_UP",
-            "stick_data": {
-                "stick_name": "L_STICK",
-                "x": "+000",
-                "y": "+100"
-            }
-        },
-        "a": {
-            "control": "LS_LEFT",
-            "stick_data": {
-                "stick_name": "L_STICK",
-                "x": "-100",
-                "y": "+000"
-            }
-        },
-        "d": {
-            "control": "LS_RIGHT",
-            "stick_data": {
-                "stick_name": "L_STICK",
-                "x": "+100",
-                "y": "+000"
-            }
-        },
-        "s": {
-            "control": "LS_DOWN",
-            "stick_data": {
-                "stick_name": "L_STICK",
-                "x": "+000",
-                "y": "-100"
-            }
-        },
-
+        "w": {"control": "LS_UP", "stick_data": {"stick_name": "L_STICK", "x": "+000", "y": "+100"}},
+        "a": {"control": "LS_LEFT", "stick_data": {"stick_name": "L_STICK", "x": "-100", "y": "+000"}},
+        "d": {"control": "LS_RIGHT", "stick_data": {"stick_name": "L_STICK", "x": "+100", "y": "+000"}},
+        "s": {"control": "LS_DOWN", "stick_data": {"stick_name": "L_STICK", "x": "+000", "y": "-100"}},
         # Right Stick Mapping
-        "KEY_UP": {
-            "control": "RS_UP",
-            "stick_data": {
-                "stick_name": "R_STICK",
-                "x": "+000",
-                "y": "+100"
-            }
-        },
-        "KEY_LEFT": {
-            "control": "RS_LEFT",
-            "stick_data": {
-                "stick_name": "R_STICK",
-                "x": "-100",
-                "y": "+000"
-            }
-        },
-        "KEY_RIGHT": {
-            "control": "RS_RIGHT",
-            "stick_data": {
-                "stick_name": "R_STICK",
-                "x": "+100",
-                "y": "+000"
-            }
-        },
-        "KEY_DOWN": {
-            "control": "RS_DOWN",
-            "stick_data": {
-                "stick_name": "R_STICK",
-                "x": "+000",
-                "y": "-100"
-            }
-        },
-
+        "KEY_UP": {"control": "RS_UP", "stick_data": {"stick_name": "R_STICK", "x": "+000", "y": "+100"}},
+        "KEY_LEFT": {"control": "RS_LEFT", "stick_data": {"stick_name": "R_STICK", "x": "-100", "y": "+000"}},
+        "KEY_RIGHT": {"control": "RS_RIGHT", "stick_data": {"stick_name": "R_STICK", "x": "+100", "y": "+000"}},
+        "KEY_DOWN": {"control": "RS_DOWN", "stick_data": {"stick_name": "R_STICK", "x": "+000", "y": "-100"}},
         # Dpad Mapping
         "g": "DPAD_UP",
         "v": "DPAD_LEFT",
         "n": "DPAD_RIGHT",
         "b": "DPAD_DOWN",
-
         # Button Mapping
         "6": "MINUS",
         "7": "PLUS",
@@ -256,7 +197,6 @@ class InputTUI():
         "j": "Y",
         "l": "A",
         "k": "B",
-
         # Triggers
         "1": "L",
         "2": "ZL",
@@ -307,7 +247,7 @@ class InputTUI():
         """
 
         remote_connection = False
-        remote_process_names = ['sshd', 'mosh-server']
+        remote_process_names = ["sshd", "mosh-server"]
         ppid = os.getppid()
         while ppid > 0:
             process = psutil.Process(ppid)
@@ -329,9 +269,7 @@ class InputTUI():
             self.nx = Nxbt(disable_logging=True)
         else:
             self.nx = Nxbt(debug=self.debug, logfile=self.logfile)
-        self.controller_index = self.nx.create_controller(
-            PRO_CONTROLLER,
-            reconnect_address=self.reconnect_target)
+        self.controller_index = self.nx.create_controller(PRO_CONTROLLER, reconnect_address=self.reconnect_target)
 
         state = None
         spinner = LoadingSpinner()
@@ -347,7 +285,7 @@ class InputTUI():
                 # Loading Screen
                 while inp != chr(113):  # Checking for q press
                     # Check key at 15hz
-                    inp = term.inkey(timeout=1/30)
+                    inp = term.inkey(timeout=1 / 30)
                     new_state = self.nx.state[self.controller_index]["state"]
 
                     if new_state != state:
@@ -406,7 +344,7 @@ class InputTUI():
             if len(term._keyboard_buf) > 1:
                 term._keyboard_buf = deque([term._keyboard_buf.pop()])
 
-            inp = term.inkey(1/66)
+            inp = term.inkey(1 / 66)
 
             pressed_key = None
             if inp.is_sequence:
@@ -414,22 +352,20 @@ class InputTUI():
             elif inp:
                 pressed_key = inp
 
-            if pressed_key == 'e':
-                self.controller.activate_control('L')
-                self.controller.activate_control('R')
+            if pressed_key == "e":
+                self.controller.activate_control("L")
+                self.controller.activate_control("R")
                 self.nx.macro(self.controller_index, "L R 0.1s")
             else:
                 try:
                     control_data = self.KEYMAP[pressed_key]
                     if type(control_data) == dict and "stick_data" in control_data.keys():
-                        x_value = control_data['stick_data']['x']
-                        y_value = control_data['stick_data']['y']
-                        stick_name = control_data['stick_data']['stick_name']
+                        x_value = control_data["stick_data"]["x"]
+                        y_value = control_data["stick_data"]["y"]
+                        stick_name = control_data["stick_data"]["stick_name"]
 
                         self.controller.activate_control(control_data["control"])
-                        self.nx.macro(
-                            self.controller_index,
-                            f"{stick_name}@{x_value}{y_value} 0.1s")
+                        self.nx.macro(self.controller_index, f"{stick_name}@{x_value}{y_value} 0.1s")
                     else:
                         self.controller.activate_control(control_data)
                         self.nx.macro(self.controller_index, f"{control_data} 0.05s")
@@ -440,7 +376,68 @@ class InputTUI():
 
             self.check_for_disconnect(term)
 
-    def direct_input_loop(self, term):
+    def on_press(self, key):
+
+        # Parse the key press event
+        pressed_key = None
+        try:
+            pressed_key = key.char
+        except AttributeError:
+            pressed_key = str(key).replace(".", "_").upper()
+
+        if not self.capture_input:  # If we're not capturing input, pass
+            pass
+        else:
+            try:
+                control_data = self.KEYMAP[pressed_key]
+                packet = self.input_packet["packet"]
+                if type(control_data) == dict and "stick_data" in control_data.keys():
+                    stick_name = control_data["stick_data"]["stick_name"]
+                    self.controller.activate_control(control_data["control"])
+                    packet[stick_name][control_data["control"]] = True
+                else:
+                    self.controller.activate_control(control_data)
+                    packet[control_data] = True
+                self.input_packet["packet"] = packet
+            except KeyError:
+                pass
+
+    def on_release(self, key):
+
+        # Parse the key release event
+        released_key = None
+        try:
+            released_key = key.char
+        except AttributeError:
+            released_key = str(key).replace(".", "_").upper()
+
+        # If the esc key is released, toggle input capturing
+        if released_key == "KEY_ESC":
+            self.capture_input = not self.capture_input
+
+        # Exit on q key press
+        if released_key == "q":
+            self.exit_tui = True
+            return False
+
+        if not self.capture_input:  # If we're not capturing input, pass
+            pass
+        else:
+            try:
+                control_data = self.KEYMAP[released_key]
+                packet = self.input_packet["packet"]
+                if type(control_data) == dict and "stick_data" in control_data.keys():
+                    stick_name = control_data["stick_data"]["stick_name"]
+                    self.controller.deactivate_control(control_data["control"])
+                    packet[stick_name][control_data["control"]] = False
+                else:
+                    self.controller.deactivate_control(control_data)
+                    packet[control_data] = False
+                self.input_packet["packet"] = packet
+            except KeyError:
+                pass
+
+    def direct_input_loop(self, term, run_loop=True):
         from pynput import keyboard
 
         self.controller.toggle_auto_keypress_deactivation(False)
@@ -449,73 +446,12 @@ class InputTUI():
 
         # Create a packet that is accessible from a multiprocessing Process
         # and from within threads
-        packet_manager = multiprocessing.Manager()
-        input_packet = packet_manager.dict()
-        input_packet["packet"] = self.nx.create_input_packet()
+        self.packet_manager = multiprocessing.Manager()
+        self.input_packet = self.packet_manager.dict()
+        self.input_packet["packet"] = self.nx.create_input_packet()
 
         print(term.move_y(term.height - 5))
         print(term.center(term.bold_black_on_white(" <Press esc to toggle input capture> ")))
-
-        def on_press(key):
-
-            # Parse the key press event
-            pressed_key = None
-            try:
-                pressed_key = key.char
-            except AttributeError:
-                pressed_key = str(key).replace(".", "_").upper()
-
-            if not self.capture_input:  # If we're not capturing input, pass
-                pass
-            else:
-                try:
-                    control_data = self.KEYMAP[pressed_key]
-                    packet = input_packet["packet"]
-                    if type(control_data) == dict and "stick_data" in control_data.keys():
-                        stick_name = control_data['stick_data']['stick_name']
-                        self.controller.activate_control(control_data["control"])
-                        packet[stick_name][control_data["control"]] = True
-                    else:
-                        self.controller.activate_control(control_data)
-                        packet[control_data] = True
-                    input_packet["packet"] = packet
-                except KeyError:
-                    pass
-
-        def on_release(key):
-
-            # Parse the key release event
-            released_key = None
-            try:
-                released_key = key.char
-            except AttributeError:
-                released_key = str(key).replace(".", "_").upper()
-
-            # If the esc key is released, toggle input capturing
-            if released_key == "KEY_ESC":
-                self.capture_input = not self.capture_input
-
-            # Exit on q key press
-            if released_key == 'q':
-                self.exit_tui = True
-                return False
-
-            if not self.capture_input:  # If we're not capturing input, pass
-                pass
-            else:
-                try:
-                    control_data = self.KEYMAP[released_key]
-                    packet = input_packet["packet"]
-                    if type(control_data) == dict and "stick_data" in control_data.keys():
-                        stick_name = control_data['stick_data']['stick_name']
-                        self.controller.deactivate_control(control_data["control"])
-                        packet[stick_name][control_data["control"]] = False
-                    else:
-                        self.controller.deactivate_control(control_data)
-                        packet[control_data] = False
-                    input_packet["packet"] = packet
-                except KeyError:
-                    pass
 
         def input_worker(nxbt, controller_index, input_packet):
 
@@ -551,35 +487,38 @@ class InputTUI():
                 packet["R_STICK"]["Y_VALUE"] = rs_y_value
 
                 nxbt.set_controller_input(controller_index, packet)
-                time.sleep(1/120)
+                time.sleep(1 / 120)
 
-        input_process = multiprocessing.Process(
-            target=input_worker, args=(self.nx, self.controller_index, input_packet))
-        input_process.start()
+        self.input_process = multiprocessing.Process(target=input_worker, args=(self.nx, self.controller_index, self.input_packet))
+        self.input_process.start()
 
         # Start a non-blocking keyboard event listener
-        listener = keyboard.Listener(
-            on_press=on_press,
-            on_release=on_release)
+        listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release)
         listener.start()
+
+        if not run_loop:
+            return
 
         # Main TUI Loop
         while True:
             if self.exit_tui:
-                packet_manager.shutdown()
-                input_process.terminate()
+                # self.packet_manager.shutdown()
+                # self.input_process.terminate()
+                self.shutdown_direct_loop()
                 break
             if not self.capture_input:
                 print(term.home + term.move_y((term.height // 2) - 4))
                 print(term.bold_black_on_white(term.center("")))
-                print(term.bold_black_on_white(term.center(
-                    "<Input Paused. Press ESC Again to Begin Capturing Input>"
-                )))
+                print(term.bold_black_on_white(term.center("<Input Paused. Press ESC Again to Begin Capturing Input>")))
                 print(term.bold_black_on_white(term.center("")))
             else:
                 self.controller.render_controller()
             self.check_for_disconnect(term)
-            time.sleep(1/120)
+            time.sleep(1 / 120)
+
+    def shutdown_direct_loop(self):
+        self.packet_manager.shutdown()
+        self.input_process.terminate()
 
     def render_start_screen(self, term, loading_text):
 
@@ -616,23 +555,23 @@ class InputTUI():
     def check_for_disconnect(self, term):
 
         state = self.nx.state[self.controller_index]["state"]
-        if state != 'connected':
+        if state != "connected":
             print(term.home + term.move_y((term.height // 2) - 4))
             print(term.bold_black_on_red(term.center("")))
             print(term.bold_black_on_red(term.center(state.title())))
             print(term.bold_black_on_red(term.center("")))
 
-            if state == 'crashed':
+            if state == "crashed":
                 time.sleep(3)
                 term.clear()
                 errors = self.nx.state[self.controller_index]["errors"]
                 raise ConnectionError(errors)
 
             while True:
-                inp = term.inkey(1/30)
+                inp = term.inkey(1 / 30)
                 if inp == chr(113):
                     exit(1)
-                elif self.nx.state[self.controller_index]["state"] == 'connected':
+                elif self.nx.state[self.controller_index]["state"] == "connected":
                     break
 
 
@@ -642,5 +581,5 @@ def main():
     tui.start()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
