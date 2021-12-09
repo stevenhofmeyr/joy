@@ -57,73 +57,75 @@ pub struct ButtonsStatus {
 
 impl fmt::Debug for ButtonsStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("ButtonsStatus")
-            .field(&format_args!("{}", self))
-            .finish()
+        f.debug_tuple("ButtonsStatus").field(&format_args!("{}", self)).finish()
     }
 }
 
 impl fmt::Display for ButtonsStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut buttons = Vec::new();
         if self.right.a() {
-            write!(f, "A ")?;
+            buttons.push("A");
         }
         if self.right.b() {
-            write!(f, "B ")?;
+            buttons.push("B");
         }
         if self.right.x() {
-            write!(f, "X ")?;
+            buttons.push("X");
         }
         if self.right.y() {
-            write!(f, "Y ")?;
+            buttons.push("Y");
         }
         if self.left.up() {
-            write!(f, "DPAD_UP ")?;
+            buttons.push("DPAD_UP");
         }
         if self.left.down() {
-            write!(f, "DPAD_DOWN ")?;
+            buttons.push("DPAD_DOWN");
         }
         if self.left.left() {
-            write!(f, "DPAD_LEFT ")?;
+            buttons.push("DPAD_LEFT");
         }
         if self.left.right() {
-            write!(f, "DPAD_RIGHT ")?;
+            buttons.push("DPAD_RIGHT");
         }
         if self.left.l() {
-            write!(f, "L ")?;
+            buttons.push("L");
         }
         if self.left.zl() {
-            write!(f, "ZL ")?;
+            buttons.push("ZL");
         }
         if self.right.r() {
-            write!(f, "R ")?;
+            buttons.push("R");
         }
         if self.right.zr() {
-            write!(f, "ZR ")?;
+            buttons.push("ZR");
         }
         if self.left.sl() || self.right.sl() {
-            write!(f, "JCL_SL ")?;
+            buttons.push("JCL_SL");
         }
         if self.left.sr() || self.right.sr() {
-            write!(f, "JCL_SR ")?;
+            buttons.push("JCL_SR");
         }
         if self.middle.lstick() {
-            write!(f, "L_STICK_PRESS ")?;
+            buttons.push("L_STICK_PRESS");
         }
         if self.middle.rstick() {
-            write!(f, "R_STICK_PRESS ")?;
+            buttons.push("R_STICK_PRESS");
         }
         if self.middle.minus() {
-            write!(f, "MINUS ")?;
+            buttons.push("MINUS");
         }
         if self.middle.plus() {
-            write!(f, "PLUS ")?;
+            buttons.push("PLUS");
         }
         if self.middle.capture() {
-            write!(f, "CAPTURE ")?;
+            buttons.push("CAPTURE");
         }
         if self.middle.home() {
-            write!(f, "HOME ")?;
+            buttons.push("HOME");
+        }
+        if !buttons.is_empty() {
+            write!(f, "BUTTONS,{} ", buttons.join(","))?;
         }
         Ok(())
     }
@@ -208,9 +210,6 @@ impl Stick {
 
 impl fmt::Debug for Stick {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_tuple("Stick")
-            .field(&self.x())
-            .field(&self.y())
-            .finish()
+        f.debug_tuple("Stick").field(&self.x()).field(&self.y()).finish()
     }
 }

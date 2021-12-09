@@ -80,7 +80,7 @@ fn main() -> Result<()> {
                     "HID device vendor ID: {:?}, product ID: {:?}, product: {:?}",
                     device_info.vendor_id(),
                     device_info.product_id(),
-                    device_info.product_string()
+                    device_info.product_string().unwrap()
                 );
                 if device_info.product_string() == Some("Joy-Con (L)") {
                     eprintln!("Left joycon found");
@@ -442,13 +442,14 @@ fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
     left_joycon.load_calibration()?;
     right_joycon.enable_imu()?;
     right_joycon.load_calibration()?;
+    right_joycon.enable_ringcon()?;
 
     let mut now = Instant::now();
     loop {
         let left_report = left_joycon.tick()?;
         let right_report = right_joycon.tick()?;
         // NOTE: the default update interval for the joycons to switch is 15ms
-        if now.elapsed() > Duration::from_millis(1000) {
+        if now.elapsed() > Duration::from_millis(2000) {
             now = Instant::now();
             monitor_one_joycon(left_report, SIDE::LEFT)?;
             monitor_one_joycon(right_report, SIDE::RIGHT)?;
@@ -459,7 +460,7 @@ fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
 
 fn monitor_one_joycon(report: Report, side: SIDE) -> Result<()> {
     if format!("{}", report.buttons) != "" {
-        print!("{}", report.buttons);
+        println!("{}", report.buttons);
     }
     let stick: Vector2<f64>;
     match side {
@@ -467,16 +468,23 @@ fn monitor_one_joycon(report: Report, side: SIDE) -> Result<()> {
         SIDE::RIGHT => stick = report.right_stick,
     };
     if stick.x.abs() > 0.1 || stick.y.abs() > 0.1 {
-        print!("<STICK,{},{:.2},{:.2}> ", side, stick.x, stick.y,);
+        println!("STICK,{},{:.2},{:.2} ", side, stick.x, stick.y,);
     }
-    let mut last_acc = Vector3::unit_x();
-    let mut last_rot = Vector3::unit_x();
-    for frame in &report.imu.unwrap() {
-        last_acc = frame.accel;
-        last_rot = frame.gyro;
+    // the last in the triple is the rotational speed
+    let frame = report.imu.unwrap()[2];
+    let acc = frame.accel;
+    let rot = frame.gyro;
+    println!("ROT,{},{:.2},{:.2},{:.2} ", side, rot.x, rot.y, rot.z);
+    println!("ACC,{},{:.2},{:.2},{:.2} ", side, acc.x, acc.y, acc.z);
+    match side {
+        SIDE::RIGHT => {
+            let flex = report.raw.imu_frames().unwrap()[2].raw_ringcon();
+            if flex != 0 {
+                println!("RING,{}", flex);
+            }
+        }
+        _ => (),
     }
-    print!("<ROT,{},{:.2},{:.2},{:.2}> ", side, last_rot.x, last_rot.y, last_rot.z);
-    print!("<ACC,{},{:.2},{:.2},{:.2}> ", side, last_acc.x, last_acc.y, last_acc.z);
     Ok(())
 }
 
