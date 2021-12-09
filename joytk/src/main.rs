@@ -14,7 +14,6 @@ use joycon::{
         //InputReport, OutputReport, HID_IDS, NINTENDO_VENDOR_ID,
         InputReport,
         OutputReport,
-        NINTENDO_VENDOR_ID,
     },
     JoyCon, Report,
 };
@@ -68,59 +67,58 @@ fn main() -> Result<()> {
         return interface::run();
     }
 
-    let api = HidApi::new()?;
+    let mut api = HidApi::new()?;
 
     let mut left_dev_info_opt = None;
     let mut right_dev_info_opt = None;
+    let mut i = 0;
 
     loop {
         for device_info in api.device_list() {
-            if device_info.vendor_id() == NINTENDO_VENDOR_ID {
-                eprintln!(
-                    "HID device vendor ID: {:?}, product ID: {:?}, product: {:?}",
-                    device_info.vendor_id(),
-                    device_info.product_id(),
-                    device_info.product_string().unwrap()
-                );
-                if device_info.product_string() == Some("Joy-Con (L)") {
-                    eprintln!("Left joycon found");
-                    left_dev_info_opt = Some(device_info.clone());
-                } else if device_info.product_string() == Some("Joy-Con (R)") {
-                    eprintln!("Right joycon found");
-                    right_dev_info_opt = Some(device_info.clone());
-                }
+            if device_info.product_string() == Some("Joy-Con (L)") && left_dev_info_opt.is_none() {
+                eprintln!("\nFound {:?}", device_info.product_string().unwrap());
+                left_dev_info_opt = Some(device_info.clone());
+            } else if device_info.product_string() == Some("Joy-Con (R)") && right_dev_info_opt.is_none() {
+                eprintln!("\nFound {:?}", device_info.product_string().unwrap());
+                right_dev_info_opt = Some(device_info.clone());
             }
         }
         if !right_dev_info_opt.is_none() && !left_dev_info_opt.is_none() {
             break;
         } else {
+            if i == 0 {
+                eprintln!(
+                    "Error: didn't find both joycons: left {} right {}",
+                    !left_dev_info_opt.is_none(),
+                    !right_dev_info_opt.is_none()
+                );
+            }
             if !opts.wait {
-                break;
+                std::process::exit(1);
             } else {
-                sleep(Duration::from_millis(200));
+                if i == 0 {
+                    eprint!("Waiting for 2s for joycons to be connected");
+                } else {
+                    eprint!(".");
+                }
+                api.refresh_devices()?;
+                sleep(Duration::from_millis(2000));
             }
         }
+        i += 1;
     }
 
-    if right_dev_info_opt.is_none() || left_dev_info_opt.is_none() {
-        eprintln!(
-            "Error: didn't find both joycons: left {} right {}",
-            !left_dev_info_opt.is_none(),
-            !right_dev_info_opt.is_none()
-        );
+    if let SubCommand::Relay(ref r) = opts.subcmd {
+        eprintln!("Relay to switch...");
+        let right_dev_info = right_dev_info_opt.unwrap();
+        let right_device = right_dev_info
+            .open_device(&api)
+            .with_context(|| format!("error opening the HID device {:?}", right_dev_info))?;
+        relay::relay(right_device, r).context("error during the relay")?;
     } else {
-        if let SubCommand::Relay(ref r) = opts.subcmd {
-            eprintln!("Relay to switch...");
-            let right_dev_info = right_dev_info_opt.unwrap();
-            let right_device = right_dev_info
-                .open_device(&api)
-                .with_context(|| format!("error opening the HID device {:?}", right_dev_info))?;
-            relay::relay(right_device, r).context("error during the relay")?;
-        } else {
-            let left_joycon = get_joycon(left_dev_info_opt.unwrap(), &api)?;
-            let right_joycon = get_joycon(right_dev_info_opt.unwrap(), &api)?;
-            hid_main(left_joycon, right_joycon, &opts).context("error running the command")?;
-        }
+        let left_joycon = get_joycon(left_dev_info_opt.unwrap(), &api)?;
+        let right_joycon = get_joycon(right_dev_info_opt.unwrap(), &api)?;
+        hid_main(left_joycon, right_joycon, &opts).context("error running the command")?;
     }
     Ok(())
 }
@@ -449,7 +447,7 @@ fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
         let left_report = left_joycon.tick()?;
         let right_report = right_joycon.tick()?;
         // NOTE: the default update interval for the joycons to switch is 15ms
-        if now.elapsed() > Duration::from_millis(2000) {
+        if now.elapsed() > Duration::from_millis(100) {
             now = Instant::now();
             monitor_one_joycon(left_report, SIDE::LEFT)?;
             monitor_one_joycon(right_report, SIDE::RIGHT)?;
@@ -468,8 +466,9 @@ fn monitor_one_joycon(report: Report, side: SIDE) -> Result<()> {
         SIDE::RIGHT => stick = report.right_stick,
     };
     if stick.x.abs() > 0.1 || stick.y.abs() > 0.1 {
-        println!("STICK,{},{:.2},{:.2} ", side, stick.x, stick.y,);
+        println!("STICK,{},{:.2},{:.2} ", side, stick.x, stick.y);
     }
+    /*
     // the last in the triple is the rotational speed
     let frame = report.imu.unwrap()[2];
     let acc = frame.accel;
@@ -484,7 +483,7 @@ fn monitor_one_joycon(report: Report, side: SIDE) -> Result<()> {
             }
         }
         _ => (),
-    }
+    }*/
     Ok(())
 }
 
