@@ -96,35 +96,35 @@ def reconnect_switch():
     return nx, controller
 
 
-def process_ringcon(console_packet, input_val):
+def process_ringcon(console_packet, input_val, log_f):
     flex = input_val.split(",")[1]
     # flex ranges from min 350 to max 4840, with resting value of 2540
-    print("FLEX", flex, "%.2f" % ((float(flex) - 2540) / 2300))
+    print("FLEX", flex, "%.2f" % ((float(flex) - 2540) / 2300), file=log_f)
 
 
-def process_movement(console_packet, input_val):
+def process_movement(console_packet, input_val, log_f):
     fields = input_val.split(",")
     side, x, y, z = fields[1:]
-    print(fields[0], side, x, y, z)
+    print(fields[0], side, x, y, z, file=log_f)
 
 
-def process_stick(console_packet, input_val):
+def process_stick(console_packet, input_val, log_f):
     fields = input_val.split(",")
     side = fields[1]
     x = int(100 * float(fields[2]))
     y = int(100 * float(fields[3]))
-    print("STICK", side, x, y)
+    print("STICK", side, x, y, file=log_f)
     packet = console_packet["packet"]
     packet[side[0] + "_STICK"]["X_VALUE"] = x
     packet[side[0] + "_STICK"]["Y_VALUE"] = y
     console_packet["packet"] = packet
 
 
-def process_buttons(console_packet, input_val, pressed_buttons, new_pressed_buttons):
+def process_buttons(console_packet, input_val, pressed_buttons, new_pressed_buttons, log_f):
     button = input_val.split(",")[1]
     if button in nxbt_buttons:
         if pressed_buttons.pop(button, None) == None:
-            print("press_button", button)
+            print("press_button", button, file=log_f)
             # the input packet is a synchronized object between processes, so we need to set it this way to ensure atomicity
             # we don't need anything more sophisticated because the input_worker just reads the shared object and never sets it
             packet = console_packet["packet"]
@@ -138,10 +138,10 @@ def process_buttons(console_packet, input_val, pressed_buttons, new_pressed_butt
         print("Unrecognized input:", button)
 
 
-def release_buttons(console_packet, pressed_buttons):
+def release_buttons(console_packet, pressed_buttons, log_f):
     # clear out buttons that are no longer pressed
     for button in pressed_buttons:
-        print("on_release({})".format(button))
+        print("on_release({})".format(button), file=log_f)
         packet = console_packet["packet"]
         if button in ["L_STICK_PRESS", "R_STICK_PRESS"]:
             packet[button[0:7]]["PRESSED"] = False
@@ -184,6 +184,7 @@ def relay_inputs(nx, controller):
 
     pressed_buttons = {}
     print("Waiting for input on pipe", FIFO_NAME)
+    log_f = open("connection.log", "w")
     try:
         f = open(FIFO_NAME, "r")
         done = False
@@ -191,8 +192,8 @@ def relay_inputs(nx, controller):
             data = f.readline()
             if len(data) == 0:
                 continue
-            input_vals = "{0}".format(data).split(" ")
-            print(input_vals)
+            input_vals = "{0}".format(data).strip().split(" ")
+            print(input_vals, file=log_f)
             sys.stdout.flush()
             new_pressed_buttons = {}
             for input_val in input_vals:
@@ -203,18 +204,18 @@ def relay_inputs(nx, controller):
                     break
                 input_type = input_val.split(",")[0]
                 if input_type == "BUTTON":
-                    process_buttons(console_packet, input_val, pressed_buttons, new_pressed_buttons)
+                    process_buttons(console_packet, input_val, pressed_buttons, new_pressed_buttons, log_f)
                 elif input_type == "STICK":
-                    process_stick(console_packet, input_val)
+                    process_stick(console_packet, input_val, log_f)
                 elif input_type == "ROT" or input_type == "ACC":
-                    process_movement(console_packet, input_val)
+                    process_movement(console_packet, input_val, log_f)
                 elif input_type == "FLEX":
-                    process_ringcon(console_packet, input_val)
+                    process_ringcon(console_packet, input_val, log_f)
                 else:
-                    print("unknown input type", input_type)
-            release_buttons(console_packet, pressed_buttons)
+                    print("unknown input type", input_type, file=log_f)
+            release_buttons(console_packet, pressed_buttons, log_f)
             pressed_buttons = new_pressed_buttons
-            print("currently pressed buttons", pressed_buttons)
+            print("currently pressed buttons", pressed_buttons, file=log_f)
 
     finally:
         os.remove(FIFO_NAME)

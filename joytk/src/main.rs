@@ -449,10 +449,12 @@ fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
         // NOTE: the default update interval for the joycons is 15ms (66Hz), but this delay only affects the responsiveness of
         // the joycons to commands; even if it's high it should work fine with the console because of the worker updates there
         // that run at the requisite 120Hz (pro controller)
-        if now.elapsed() > Duration::from_millis(500) {
+        if now.elapsed() > Duration::from_millis(1000 / 120) {
             now = Instant::now();
             monitor_one_joycon(left_report, SIDE::LEFT)?;
             monitor_one_joycon(right_report, SIDE::RIGHT)?;
+            // the reader on the other side of the pipe reads by line, so this ensures it gets the latest update all as one
+            println!("");
             std::io::stdout().flush()?;
         }
     }
@@ -482,7 +484,6 @@ fn monitor_one_joycon(report: Report, side: SIDE) -> Result<()> {
         }
         _ => (),
     }*/
-    println!("");
     Ok(())
 }
 
