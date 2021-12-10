@@ -63,69 +63,65 @@ impl fmt::Debug for ButtonsStatus {
 
 impl fmt::Display for ButtonsStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut buttons = Vec::new();
         if self.right.a() {
-            buttons.push("A");
+            write!(f, "BUTTON,{}\n", "A")?;
         }
         if self.right.b() {
-            buttons.push("B");
+            write!(f, "BUTTON,{}\n", "B")?;
         }
         if self.right.x() {
-            buttons.push("X");
+            write!(f, "BUTTON,{}\n", "X")?;
         }
         if self.right.y() {
-            buttons.push("Y");
+            write!(f, "BUTTON,{}\n", "Y")?;
         }
         if self.left.up() {
-            buttons.push("DPAD_UP");
+            write!(f, "BUTTON,{}\n", "DPAD_UP")?;
         }
         if self.left.down() {
-            buttons.push("DPAD_DOWN");
+            write!(f, "BUTTON,{}\n", "DPAD_DOWN")?;
         }
         if self.left.left() {
-            buttons.push("DPAD_LEFT");
+            write!(f, "BUTTON,{}\n", "DPAD_LEFT")?;
         }
         if self.left.right() {
-            buttons.push("DPAD_RIGHT");
+            write!(f, "BUTTON,{}\n", "DPAD_RIGHT")?;
         }
         if self.left.l() {
-            buttons.push("L");
+            write!(f, "BUTTON,{}\n", "L")?;
         }
         if self.left.zl() {
-            buttons.push("ZL");
+            write!(f, "BUTTON,{}\n", "ZL")?;
         }
         if self.right.r() {
-            buttons.push("R");
+            write!(f, "BUTTON,{}\n", "R")?;
         }
         if self.right.zr() {
-            buttons.push("ZR");
+            write!(f, "BUTTON,{}\n", "ZR")?;
         }
         if self.left.sl() || self.right.sl() {
-            buttons.push("JCL_SL");
+            write!(f, "BUTTON,{}\n", "JCL_SL")?;
         }
         if self.left.sr() || self.right.sr() {
-            buttons.push("JCL_SR");
+            write!(f, "BUTTON,{}\n", "JCL_SR")?;
         }
         if self.middle.lstick() {
-            buttons.push("L_STICK_PRESS");
+            write!(f, "BUTTON,{}\n", "L_STICK_PRESS")?;
         }
         if self.middle.rstick() {
-            buttons.push("R_STICK_PRESS");
+            write!(f, "BUTTON,{}\n", "R_STICK_PRESS")?;
         }
         if self.middle.minus() {
-            buttons.push("MINUS");
+            write!(f, "BUTTON,{}\n", "MINUS")?;
         }
         if self.middle.plus() {
-            buttons.push("PLUS");
+            write!(f, "BUTTON,{}\n", "PLUS")?;
         }
         if self.middle.capture() {
-            buttons.push("CAPTURE");
+            write!(f, "BUTTON,{}\n", "CAPTURE")?;
         }
         if self.middle.home() {
-            buttons.push("HOME");
-        }
-        if !buttons.is_empty() {
-            write!(f, "BUTTONS,{} ", buttons.join(","))?;
+            write!(f, "BUTTON,{}\n", "HOME")?;
         }
         Ok(())
     }

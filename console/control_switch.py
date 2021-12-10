@@ -2,13 +2,13 @@
 
 # need to run this script as root
 
+import multiprocessing
 import os
 import sys
 import time
 import argparse
 
 import nxbt
-import nxbt.tui
 
 
 nxbt_buttons = [b for b in dir(nxbt.Buttons) if not b.startswith("__")]
@@ -96,60 +96,91 @@ def reconnect_switch():
     return nx, controller
 
 
-def process_ringcon(nx, controller, input_val):
-    fields = input_val.split(",")
-    if len(fields) > 0 and fields[0] != "RING":
-        return False
-    flex = fields[1]
+def process_ringcon(console_packet, input_val):
+    flex = input_val.split(",")[1]
     # flex ranges from min 350 to max 4840, with resting value of 2540
     print("FLEX", flex, "%.2f" % ((float(flex) - 2540) / 2300))
-    return True
 
 
-def process_movement(nx, controller, input_val):
+def process_movement(console_packet, input_val):
     fields = input_val.split(",")
-    if len(fields) > 0 and fields[0] != "ROT" and fields[0] != "ACC":
-        return False
     side, x, y, z = fields[1:]
     print(fields[0], side, x, y, z)
-    return True
 
 
-def process_stick(nx, controller, input_val):
+def process_stick(console_packet, input_val):
     fields = input_val.split(",")
-    if len(fields) > 0 and fields[0] != "STICK":
-        return False
     side = fields[1]
-    x = float(fields[2])
-    y = float(fields[3])
+    x = int(100 * float(fields[2]))
+    y = int(100 * float(fields[3]))
     print("STICK", side, x, y)
-    nx.tilt_stick(controller, side[0] + "_STICK", int(100 * x), int(100 * y), block=False)
-    return True
+    packet = console_packet["packet"]
+    packet[side[0] + "_STICK"]["X_VALUE"] = x
+    packet[side[0] + "_STICK"]["Y_VALUE"] = y
+    console_packet["packet"] = packet
 
 
-def process_buttons(tui, input_val, pressed_buttons, new_pressed_buttons):
-    fields = input_val.split(",")
-    if len(fields) > 0 and fields[0] != "BUTTONS":
-        return False
-    for button in fields[1:]:
-        if button in nxbt_buttons:
-            if pressed_buttons.pop(button, None) == None:
-                print("on_press({})".format(button))
-                if tui is not None:
-                    tui.on_press(button)
-            new_pressed_buttons[button] = True
+def process_buttons(console_packet, input_val, pressed_buttons, new_pressed_buttons):
+    button = input_val.split(",")[1]
+    if button in nxbt_buttons:
+        if pressed_buttons.pop(button, None) == None:
+            print("press_button", button)
+            # the input packet is a synchronized object between processes, so we need to set it this way to ensure atomicity
+            # we don't need anything more sophisticated because the input_worker just reads the shared object and never sets it
+            packet = console_packet["packet"]
+            if button in ["L_STICK_PRESS", "R_STICK_PRESS"]:
+                packet[button[0:7]]["PRESSED"] = True
+            else:
+                packet[button] = True
+            console_packet["packet"] = packet
+        new_pressed_buttons[button] = True
+    else:
+        print("Unrecognized input:", button)
+
+
+def release_buttons(console_packet, pressed_buttons):
+    # clear out buttons that are no longer pressed
+    for button in pressed_buttons:
+        print("on_release({})".format(button))
+        packet = console_packet["packet"]
+        if button in ["L_STICK_PRESS", "R_STICK_PRESS"]:
+            packet[button[0:7]]["PRESSED"] = False
         else:
-            print("Unrecognized input:", button)
-    return True
+            packet[button] = False
+        console_packet["packet"] = packet
 
 
-def relay_inputs(tui):
+def console_worker(nx, controller, console_packet):
+    if controller is None:
+        f = open("input_worker.log", "w")
+    while True:
+        packet = console_packet["packet"]
+        if controller is not None:
+            nx.set_controller_input(controller, packet)
+            # this is the frequency expected for a pro controller
+            time.sleep(1.0 / 120)
+        else:
+            print(packet, file=f)
+            f.flush()
+            # slow frequency for easy debugging
+            time.sleep(5)
+
+
+def relay_inputs(nx, controller):
     FIFO_NAME = "joycons"
-    os.mkfifo(FIFO_NAME)
-    os.chmod(FIFO_NAME, mode=0o666)
+    while True:
+        try:
+            os.mkfifo(FIFO_NAME)
+            os.chmod(FIFO_NAME, mode=0o666)
+            break
+        except FileExistsError:
+            os.remove(FIFO_NAME)
 
-    if tui is not None:
-        tui.direct_input_loop(tui.term, run_loop=False)
+    packet_manager = multiprocessing.Manager()
+    console_packet = packet_manager.dict()
+    console_packet["packet"] = nx.create_input_packet()
+    console_process = multiprocessing.Process(target=console_worker, args=(nx, controller, console_packet))
+    console_process.start()
 
     pressed_buttons = {}
     print("Waiting for input on pipe", FIFO_NAME)
@@ -161,7 +192,7 @@ def relay_inputs(tui):
             if len(data) == 0:
                 continue
             input_vals = "{0}".format(data).split(" ")
-            # print(input_vals)
+            print(input_vals)
             sys.stdout.flush()
             new_pressed_buttons = {}
             for input_val in input_vals:
@@ -170,23 +201,26 @@ def relay_inputs(tui):
                     print("Done with controller")
                     done = True
                     break
-                process_buttons(tui, input_val, pressed_buttons, new_pressed_buttons)
-                # process_stick(nx, controller, input_val)
-                # process_movement(nx, controller, input_val)
-                # process_ringcon(nx, controller, input_val)
-            # clear out buttons that are no longer pressed
-            for button in pressed_buttons:
-                print("on_release({})".format(button))
-                if tui is not None:
-                    tui.on_release(button)
-            # keep track of all currently pressed buttons
+                input_type = input_val.split(",")[0]
+                if input_type == "BUTTON":
+                    process_buttons(console_packet, input_val, pressed_buttons, new_pressed_buttons)
+                elif input_type == "STICK":
+                    process_stick(console_packet, input_val)
+                elif input_type == "ROT" or input_type == "ACC":
+                    process_movement(console_packet, input_val)
+                elif input_type == "FLEX":
+                    process_ringcon(console_packet, input_val)
+                else:
+                    print("unknown input type", input_type)
+            release_buttons(console_packet, pressed_buttons)
             pressed_buttons = new_pressed_buttons
             print("currently pressed buttons", pressed_buttons)
 
     finally:
         os.remove(FIFO_NAME)
-        if tui is not None:
-            tui.shutdown_direct_loop()
+        if nx is not None:
+            packet_manager.shutdown()
+            console_process.terminate()
 
 
 if __name__ == "__main__":
@@ -205,9 +239,9 @@ if __name__ == "__main__":
     if options.pair:
         pair_switch()
     if options.test_inputs:
-        relay_inputs(None)
+        nx = nxbt.Nxbt()
+        relay_inputs(nx, None)
     else:
         nx, controller = reconnect_switch()
-        tui = nxbt.tui.InputTUI()
-        relay_inputs(tui)
+        relay_inputs(nx, controller)
         nx.remove_controller(controller)
