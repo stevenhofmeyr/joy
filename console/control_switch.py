@@ -152,7 +152,7 @@ def release_buttons(console_packet, pressed_buttons):
 
 def console_worker(nx, controller, console_packet):
     if controller is None:
-        f = open("input_worker.log", "w")
+        f = open("console_worker.log", "w")
     while True:
         packet = console_packet["packet"]
         if controller is not None:

@@ -3,3 +3,4 @@
 flamegraph.svg
 perf.data*
 console/__pycache__
+console_worker.log
