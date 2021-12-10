@@ -451,8 +451,10 @@ fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
         // that run at the requisite 120Hz (pro controller)
         if now.elapsed() > Duration::from_millis(1000 / 120) {
             now = Instant::now();
-            monitor_one_joycon(left_report, SIDE::LEFT)?;
-            monitor_one_joycon(right_report, SIDE::RIGHT)?;
+            if !monitor_one_joycon(left_report, SIDE::LEFT) {
+                // only allow independent action on the right camera tilt if not moving
+                monitor_one_joycon(right_report, SIDE::RIGHT);
+            }
             // the reader on the other side of the pipe reads by line, so this ensures it gets the latest update all as one
             println!("");
             std::io::stdout().flush()?;
@@ -460,7 +462,7 @@ fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
     }
 }
 
-fn monitor_one_joycon(report: Report, side: SIDE) -> Result<()> {
+fn monitor_one_joycon(report: Report, side: SIDE) -> bool {
     print!("{}", report.buttons);
     let stick: Vector2<f64>;
     match side {
@@ -468,6 +470,11 @@ fn monitor_one_joycon(report: Report, side: SIDE) -> Result<()> {
         SIDE::RIGHT => stick = report.right_stick,
     };
     print!("STICK,{},{:.2},{:.2} ", side, stick.x, stick.y);
+    /*
+    if matches!(side, SIDE::LEFT) && (stick.x.abs() > 0.1 || stick.y.abs() > 0.1) {
+        print!("STICK,{},{:.2},{:.2} ", "RIGHT", stick.x, -6.0 / 100.0);
+        return true;
+    }*/
     /*
     // the last in the triple is the rotational speed
     let frame = report.imu.unwrap()[2];
@@ -484,7 +491,7 @@ fn monitor_one_joycon(report: Report, side: SIDE) -> Result<()> {
         }
         _ => (),
     }*/
-    Ok(())
+    false
 }
 
 fn decode() -> anyhow::Result<()> {
