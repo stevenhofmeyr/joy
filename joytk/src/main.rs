@@ -446,8 +446,10 @@ fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
     loop {
         let left_report = left_joycon.tick()?;
         let right_report = right_joycon.tick()?;
-        // NOTE: the default update interval for the joycons to switch is 15ms
-        if now.elapsed() > Duration::from_millis(100) {
+        // NOTE: the default update interval for the joycons is 15ms (66Hz), but this delay only affects the responsiveness of
+        // the joycons to commands; even if it's high it should work fine with the console because of the worker updates there
+        // that run at the requisite 120Hz (pro controller)
+        if now.elapsed() > Duration::from_millis(500) {
             now = Instant::now();
             monitor_one_joycon(left_report, SIDE::LEFT)?;
             monitor_one_joycon(right_report, SIDE::RIGHT)?;
@@ -463,23 +465,24 @@ fn monitor_one_joycon(report: Report, side: SIDE) -> Result<()> {
         SIDE::LEFT => stick = report.left_stick,
         SIDE::RIGHT => stick = report.right_stick,
     };
-    println!("STICK,{},{:.2},{:.2} ", side, stick.x, stick.y);
+    print!("STICK,{},{:.2},{:.2} ", side, stick.x, stick.y);
     /*
     // the last in the triple is the rotational speed
     let frame = report.imu.unwrap()[2];
     let acc = frame.accel;
     let rot = frame.gyro;
-    println!("ROT,{},{:.2},{:.2},{:.2} ", side, rot.x, rot.y, rot.z);
-    println!("ACC,{},{:.2},{:.2},{:.2} ", side, acc.x, acc.y, acc.z);
+    print!("ROT,{},{:.2},{:.2},{:.2} ", side, rot.x, rot.y, rot.z);
+    print!("ACC,{},{:.2},{:.2},{:.2} ", side, acc.x, acc.y, acc.z);
     match side {
         SIDE::RIGHT => {
             let flex = report.raw.imu_frames().unwrap()[2].raw_ringcon();
             if flex != 0 {
-                println!("RING,{}", flex);
+                print!("RING,{} ", flex);
             }
         }
         _ => (),
     }*/
+    println!("");
     Ok(())
 }
 
