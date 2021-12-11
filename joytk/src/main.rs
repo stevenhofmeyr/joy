@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use cgmath::{Vector2, Vector3};
+use cgmath::{Deg, Euler, One, Quaternion, Vector2, Vector3};
 use clap::Clap;
 use colored::Colorize;
 use joycon::{
@@ -20,7 +20,7 @@ use joycon::{
 use std::{
     convert::TryFrom,
     //fmt::Debug,
-    fs::OpenOptions,
+    fs::{File, OpenOptions},
     io::{BufRead, Write},
     time::Duration,
 };
@@ -158,8 +158,8 @@ fn hid_main(mut left_joycon: JoyCon, mut right_joycon: JoyCon, opts: &Opts) -> R
                 calibrate_sticks(&mut right_joycon)?;
             }
             CalibrateE::Gyroscope => {
-                calibrate_gyro(&mut left_joycon)?;
-                calibrate_gyro(&mut right_joycon)?;
+                calibrate_gyro(&mut left_joycon, "left")?;
+                calibrate_gyro(&mut right_joycon, "right")?;
             }
             CalibrateE::Reset => {
                 reset_calibration(&mut left_joycon)?;
@@ -189,7 +189,7 @@ fn hid_main(mut left_joycon: JoyCon, mut right_joycon: JoyCon, opts: &Opts) -> R
 
 fn pulse_rate(joycon: &mut JoyCon) -> Result<()> {
     joycon.enable_pulserate()?;
-    println!("pote");
+    eprintln!("pote");
     let mut i = 0;
     loop {
         let report = joycon.recv()?;
@@ -236,15 +236,15 @@ fn restore(_joycon: &mut JoyCon) -> Result<()> {
     unimplemented!()
 }
 
-fn calibrate_gyro(joycon: &mut JoyCon) -> Result<()> {
+fn calibrate_gyro(joycon: &mut JoyCon, side: &str) -> Result<()> {
     joycon.enable_imu()?;
-    println!("Don't move the controller...");
+    eprintln!("Calibrating {}: don't move the controller...", side);
     sleep(Duration::from_secs(1));
 
     let mut gyro_reports = Vec::new();
     let mut acc_reports = Vec::new();
     for i in (0..10).rev() {
-        print!("{}, ", i);
+        eprint!("{}, ", i);
         std::io::stdout().flush()?;
         let now = Instant::now();
         while now.elapsed() < Duration::from_secs(1) {
@@ -253,7 +253,7 @@ fn calibrate_gyro(joycon: &mut JoyCon) -> Result<()> {
             acc_reports.extend(report.raw.imu_frames().unwrap().iter().map(|x| x.raw_accel()));
         }
     }
-    println!();
+    eprintln!();
     let gyro_avg = gyro_reports.iter().sum::<Vector3<f64>>() / gyro_reports.len() as f64;
 
     let factory: SensorCalibration = joycon.read_spi()?;
@@ -261,18 +261,19 @@ fn calibrate_gyro(joycon: &mut JoyCon) -> Result<()> {
     let mut calib = user.calib().unwrap_or(factory);
     calib.set_gyro_offset(gyro_avg);
 
-    println!("Writing calibration data {:x?}", calib);
+    eprintln!("Writing calibration data {:x?}...", calib);
     joycon.write_spi(UserSensorCalibration::from(calib))?;
+    eprintln!("...done");
 
     Ok(())
 }
 
 fn calibrate_sticks(joycon: &mut JoyCon) -> Result<()> {
-    println!("Don't move the sticks...");
+    eprintln!("Don't move the sticks...");
     sleep(Duration::from_secs(1));
     let (left_neutral, right_neutral) = raw_sticks(joycon)?;
 
-    println!("Move the sticks then press A...");
+    eprintln!("Move the sticks then press A...");
     let mut l_x_min = left_neutral.x();
     let mut l_x_max = left_neutral.x();
     let mut l_y_min = left_neutral.y();
@@ -435,26 +436,58 @@ fn set_color(joycon: &mut JoyCon, arg: &SetColor) -> Result<()> {
     Ok(())
 }
 
+const WIN_SIZE: usize = 60;
+
 fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
+    //calibrate_gyro(left_joycon, "left")?;
     left_joycon.enable_imu()?;
     left_joycon.load_calibration()?;
+    //calibrate_gyro(right_joycon, "right")?;
     right_joycon.enable_imu()?;
     right_joycon.load_calibration()?;
+
     right_joycon.enable_ringcon()?;
+
+    let left_gyro_file = File::create("left_gyro.dat")?;
+    let right_gyro_file = File::create("right_gyro.dat")?;
+
+    let mut left_orientation = Quaternion::<f64>::one();
+    let mut right_orientation = Quaternion::<f64>::one();
+
+    let mut accel_window: Vector3<[f64; WIN_SIZE]> = Vector3 {
+        x: [0.0; WIN_SIZE],
+        y: [0.0; WIN_SIZE],
+        z: [0.0; WIN_SIZE],
+    };
+    let mut gyro_window: Vector3<[f64; WIN_SIZE]> = Vector3 {
+        x: [0.0; WIN_SIZE],
+        y: [0.0; WIN_SIZE],
+        z: [0.0; WIN_SIZE],
+    };
 
     let mut now = Instant::now();
     loop {
         let left_report = left_joycon.tick()?;
         let right_report = right_joycon.tick()?;
-        // NOTE: the default update interval for the joycons is 15ms (66Hz), but this delay only affects the responsiveness of
-        // the joycons to commands; even if it's high it should work fine with the console because of the worker updates there
-        // that run at the requisite 120Hz (pro controller)
+        // NOTE: the default update interval for the joycons is 15ms (66Hz) and the pro controller is 8ms (120Hz)
         if now.elapsed() > Duration::from_millis(1000 / 120) {
             now = Instant::now();
-            if !monitor_one_joycon(left_report, SIDE::LEFT) {
-                // only allow independent action on the right camera tilt if not moving
-                monitor_one_joycon(right_report, SIDE::RIGHT);
-            }
+            left_orientation = monitor_one_joycon(
+                left_report,
+                SIDE::LEFT,
+                &left_gyro_file,
+                left_orientation,
+                &mut accel_window,
+                &mut gyro_window,
+            )?;
+            right_orientation = monitor_one_joycon(
+                right_report,
+                SIDE::RIGHT,
+                &right_gyro_file,
+                right_orientation,
+                &mut accel_window,
+                &mut gyro_window,
+            )?;
             // the reader on the other side of the pipe reads by line, so this ensures it gets the latest update all as one
             println!("");
             std::io::stdout().flush()?;
@@ -462,36 +495,122 @@ fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
     }
 }
 
-fn monitor_one_joycon(report: Report, side: SIDE) -> bool {
+fn monitor_one_joycon(
+    report: Report,
+    side: SIDE,
+    mut f: &File,
+    mut orientation: Quaternion<f64>,
+    accel_window: &mut Vector3<[f64; WIN_SIZE]>,
+    gyro_window: &mut Vector3<[f64; WIN_SIZE]>,
+) -> Result<Quaternion<f64>> {
     print!("{}", report.buttons);
-    let stick: Vector2<f64>;
-    match side {
-        SIDE::LEFT => stick = report.left_stick,
-        SIDE::RIGHT => stick = report.right_stick,
-    };
-    print!("STICK,{},{:.2},{:.2} ", side, stick.x, stick.y);
-    /*
-    if matches!(side, SIDE::LEFT) && (stick.x.abs() > 0.1 || stick.y.abs() > 0.1) {
-        print!("STICK,{},{:.2},{:.2} ", "RIGHT", stick.x, -6.0 / 100.0);
-        return true;
-    }*/
-    /*
-    // the last in the triple is the rotational speed
-    let frame = report.imu.unwrap()[2];
-    let acc = frame.accel;
-    let rot = frame.gyro;
-    print!("ROT,{},{:.2},{:.2},{:.2} ", side, rot.x, rot.y, rot.z);
-    print!("ACC,{},{:.2},{:.2},{:.2} ", side, acc.x, acc.y, acc.z);
+
+    let mut accel = Vector3::unit_x();
+    let mut gyro = Vector3::unit_x();
+
+    for frame in &report.imu.unwrap() {
+        orientation = orientation
+            * Quaternion::from(Euler::new(
+                Deg(frame.gyro.x * 0.005),
+                Deg(frame.gyro.y * 0.005),
+                Deg(frame.gyro.z * 0.005),
+            ));
+        accel = frame.accel;
+        gyro = frame.gyro;
+    }
+    let euler_rot = Euler::from(orientation);
+    let pitch = Deg::from(euler_rot.x);
+    let yaw = Deg::from(euler_rot.y);
+    let roll = Deg::from(euler_rot.z);
+    let mut flex = 0;
     match side {
         SIDE::RIGHT => {
-            let flex = report.raw.imu_frames().unwrap()[2].raw_ringcon();
-            if flex != 0 {
-                print!("RING,{} ", flex);
+            flex = report.raw.imu_frames().unwrap()[2].raw_ringcon();
+            if flex > 300 && flex < 2000 {
+                // pulling draws bow
+                print!("BUTTON,ZR ");
+                //eprintln!("pulling bow");
+            } else if flex > 3000 {
+                // pushing attacks
+                print!("BUTTON,Y ");
+                //eprintln!("attack!");
             }
         }
         _ => (),
-    }*/
-    false
+    };
+    // FIXME: add moving averages over 50 samples for all properties. Store as Vector3 (x, y, z) and a vector of 51 points per
+    // x, y or z, with the first point being the average.
+    let max_accel_x = max_magnitude(&mut (*accel_window).x, accel.x);
+    let max_accel_y = max_magnitude(&mut (*accel_window).y, accel.y);
+    let max_accel_z = max_magnitude(&mut (*accel_window).z, accel.z);
+    writeln!(
+        f,
+        "{:.3} {:.3} {:.3} {:.3} {:.3} {:.3} {:.3} {:.3} {:.3} {:?} {:?} {:?} {}",
+        accel.x, accel.y, accel.z, max_accel_x, max_accel_y, max_accel_z, gyro.x, gyro.y, gyro.z, pitch, yaw, roll, flex,
+    )?;
+    let mut stick: Vector2<f64> = Vector2 { x: 0.0, y: 0.0 };
+    match side {
+        SIDE::LEFT => {
+            //stick = report.left_stick;
+            if max_accel_x > 2.5 {
+                stick.y = 1.0;
+                //eprintln!("running fast!");
+                if max_accel_x > 4.0 {
+                    print!("BUTTON,B ");
+                    //eprintln!("sprinting!");
+                }
+            } else if max_accel_x > 1.5 {
+                stick.y = max_accel_x - 1.5;
+                //eprintln!("running {:.2}", stick.x);
+            } else {
+                // not moving forward, so we could be sneaking
+                if accel.z > 0.8 {
+                    print!("BUTTON,L_STICK_PRESS ");
+                    //eprintln!("sneaking...");
+                    if max_accel_x > 0.85 {
+                        stick.y = 1.0;
+                    } else {
+                        stick = report.left_stick;
+                    }
+                }
+            }
+        }
+        SIDE::RIGHT => {
+            if accel.y < 0.65 {
+                if accel.x < -0.5 {
+                    stick.x = (accel.x + 0.5) / 0.5;
+                    if stick.x < -1.0 {
+                        stick.x = -1.0;
+                    }
+                } else if accel.x > 0.5 {
+                    stick.x = (accel.x - 0.5) / 0.5;
+                    if stick.x > 1.0 {
+                        stick.x = 1.0;
+                    }
+                }
+            } else if accel.z < -0.5 {
+                stick.y = (accel.z + 0.5) / 0.5;
+                if stick.y < -1.0 {
+                    stick.y = -1.0;
+                }
+            } else if accel.z > 0.5 {
+                stick.y = (accel.z - 0.5) / 0.5;
+                if stick.y > 1.0 {
+                    stick.y = 1.0;
+                }
+            } else {
+                stick = report.right_stick;
+            }
+        }
+    };
+    print!("STICK,{},{:.2},{:.2} ", side, stick.x, stick.y);
+    Ok(orientation)
+}
+
+fn max_magnitude(window_vals: &mut [f64; WIN_SIZE], new_val: f64) -> f64 {
+    (*window_vals).rotate_left(1);
+    (*window_vals)[WIN_SIZE - 1] = new_val.abs();
+    (*window_vals).iter().cloned().fold((*window_vals)[0], f64::max)
 }
 
 fn decode() -> anyhow::Result<()> {
