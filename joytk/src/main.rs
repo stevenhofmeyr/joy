@@ -523,12 +523,14 @@ fn monitor_one_joycon(
     let yaw = Deg::from(euler_rot.y);
     let roll = Deg::from(euler_rot.z);
     let mut flex = 0;
+    let mut bow_pull = false;
     match side {
         SIDE::RIGHT => {
             flex = report.raw.imu_frames().unwrap()[2].raw_ringcon();
             if flex > 300 && flex < 2000 {
                 // pulling draws bow
                 print!("BUTTON,ZR ");
+                bow_pull = true;
                 //eprintln!("pulling bow");
             } else if flex > 3000 {
                 // pushing attacks
@@ -538,8 +540,6 @@ fn monitor_one_joycon(
         }
         _ => (),
     };
-    // FIXME: add moving averages over 50 samples for all properties. Store as Vector3 (x, y, z) and a vector of 51 points per
-    // x, y or z, with the first point being the average.
     let max_accel_x = max_magnitude(&mut (*accel_window).x, accel.x);
     let max_accel_y = max_magnitude(&mut (*accel_window).y, accel.y);
     let max_accel_z = max_magnitude(&mut (*accel_window).z, accel.z);
@@ -579,26 +579,55 @@ fn monitor_one_joycon(
             }
         }
         SIDE::RIGHT => {
+            // adjust viewpoint
             if accel.z < -0.5 {
-                stick.y = -((accel.z + 0.5) / 0.5);
-                if stick.y > 1.0 {
-                    stick.y = 1.0;
+                if bow_pull {
+                    stick.x = -((accel.z + 0.5) / 0.5);
+                    if stick.x > 1.0 {
+                        stick.x = 1.0;
+                    }
+                } else {
+                    stick.y = -((accel.z + 0.5) / 0.5);
+                    if stick.y > 1.0 {
+                        stick.y = 1.0;
+                    }
                 }
             } else if accel.z > 0.5 {
-                stick.y = -((accel.z - 0.5) / 0.5);
-                if stick.y < -1.0 {
-                    stick.y = -1.0;
-                }
-            } else if accel.y < 0.65 {
-                if accel.x < -0.5 {
-                    stick.x = (accel.x + 0.5) / 0.5;
+                if bow_pull {
+                    stick.x = -((accel.z - 0.5) / 0.5);
                     if stick.x < -1.0 {
                         stick.x = -1.0;
                     }
+                } else {
+                    stick.y = -((accel.z - 0.5) / 0.5);
+                    if stick.y < -1.0 {
+                        stick.y = -1.0;
+                    }
+                }
+            } else if accel.y < 0.65 {
+                if accel.x < -0.5 {
+                    if bow_pull {
+                        stick.y = -((accel.x + 0.5) / 0.5);
+                        if stick.y > 1.0 {
+                            stick.y = 1.0;
+                        }
+                    } else {
+                        stick.x = (accel.x + 0.5) / 0.5;
+                        if stick.x < -1.0 {
+                            stick.x = -1.0;
+                        }
+                    }
                 } else if accel.x > 0.5 {
-                    stick.x = (accel.x - 0.5) / 0.5;
-                    if stick.x > 1.0 {
-                        stick.x = 1.0;
+                    if bow_pull {
+                        stick.y = -((accel.x - 0.5) / 0.5);
+                        if stick.y < -1.0 {
+                            stick.y = -1.0;
+                        }
+                    } else {
+                        stick.x = (accel.x - 0.5) / 0.5;
+                        if stick.x > 1.0 {
+                            stick.x = 1.0;
+                        }
                     }
                 }
             } else {
