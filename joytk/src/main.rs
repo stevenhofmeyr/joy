@@ -563,6 +563,7 @@ fn monitor_one_joycon(
                 stick.y = max_accel_x - 1.5;
                 //eprintln!("running {:.2}", stick.x);
             } else {
+                /*
                 // not moving forward, so we could be sneaking
                 if accel.z > 0.8 {
                     print!("BUTTON,L_STICK_PRESS ");
@@ -573,10 +574,22 @@ fn monitor_one_joycon(
                         stick = report.left_stick;
                     }
                 }
+                */
+                stick = report.left_stick;
             }
         }
         SIDE::RIGHT => {
-            if accel.y < 0.65 {
+            if accel.z < -0.5 {
+                stick.y = -((accel.z + 0.5) / 0.5);
+                if stick.y > 1.0 {
+                    stick.y = 1.0;
+                }
+            } else if accel.z > 0.5 {
+                stick.y = -((accel.z - 0.5) / 0.5);
+                if stick.y < -1.0 {
+                    stick.y = -1.0;
+                }
+            } else if accel.y < 0.65 {
                 if accel.x < -0.5 {
                     stick.x = (accel.x + 0.5) / 0.5;
                     if stick.x < -1.0 {
@@ -587,16 +600,6 @@ fn monitor_one_joycon(
                     if stick.x > 1.0 {
                         stick.x = 1.0;
                     }
-                }
-            } else if accel.z < -0.5 {
-                stick.y = (accel.z + 0.5) / 0.5;
-                if stick.y < -1.0 {
-                    stick.y = -1.0;
-                }
-            } else if accel.z > 0.5 {
-                stick.y = (accel.z - 0.5) / 0.5;
-                if stick.y > 1.0 {
-                    stick.y = 1.0;
                 }
             } else {
                 stick = report.right_stick;

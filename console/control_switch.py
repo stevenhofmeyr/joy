@@ -111,8 +111,8 @@ def process_movement(console_packet, input_val, log_f):
 def process_stick(console_packet, input_val, log_f):
     fields = input_val.split(",")
     side = fields[1]
-    x = int(100 * float(fields[2]))
-    y = int(100 * float(fields[3]))
+    x = max(-100, min(100, int(100 * float(fields[2]))))
+    y = max(-100, min(100, int(100 * float(fields[3]))))
     if abs(x) > 10 or abs(y) > 10:
         print("STICK", side, x, y, file=log_f, flush=True)
     packet = console_packet["packet"]
