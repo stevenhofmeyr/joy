@@ -178,7 +178,7 @@ fn hid_main(mut left_joycon: JoyCon, mut right_joycon: JoyCon, opts: &Opts) -> R
     Ok(())
 }
 
-const WIN_SIZE: usize = 60;
+const WIN_SIZE: usize = 30;
 
 fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
     //calibrate_gyro(left_joycon, "left")?;
@@ -210,17 +210,24 @@ fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
         y: [0.0; WIN_SIZE],
         z: [0.0; WIN_SIZE],
     };
-
     let mut squat_steps = 0;
-
+    let mut squatting = false;
     let mut now = Instant::now();
+
     loop {
         let left_report = left_joycon.tick()?;
         let right_report = right_joycon.tick()?;
         // NOTE: the default update interval for the joycons is 15ms (66Hz) and the pro controller is 8ms (120Hz)
         if now.elapsed() > Duration::from_millis(1000 / 66) {
             now = Instant::now();
-            squat_steps = monitor_left_joycon(left_report, &left_gyro_file, &mut accel_window, &mut gyro_window, squat_steps)?;
+            monitor_left_joycon(
+                left_report,
+                &left_gyro_file,
+                &mut accel_window,
+                &mut gyro_window,
+                &mut squat_steps,
+                &mut squatting,
+            )?;
             monitor_right_joycon(right_report, &right_gyro_file)?;
             // the reader on the other side of the pipe reads by line, so this ensures it gets the latest update all as one
             println!("");
@@ -234,8 +241,9 @@ fn monitor_left_joycon(
     mut f: &File,
     accel_window: &mut Vector3<[f64; WIN_SIZE]>,
     gyro_window: &mut Vector3<[f64; WIN_SIZE]>,
-    mut squat_steps: i32,
-) -> Result<i32> {
+    squat_steps: &mut i32,
+    squatting: &mut bool,
+) -> Result<()> {
     print!("{}", report.buttons);
 
     let frame = &report.imu.unwrap()[2];
@@ -247,9 +255,9 @@ fn monitor_left_joycon(
     let max_gyro_x = max_magnitude(&mut (*gyro_window).x, gyro.x);
     let max_gyro_y = max_magnitude(&mut (*gyro_window).y, gyro.y);
     let max_gyro_z = max_magnitude(&mut (*gyro_window).z, gyro.z);
-    writeln!(
+    write!(
         f,
-        "{:.3} {:.3} {:.3} {:.3} {:.3} {:.3}",
+        "{:.3} {:.3} {:.3} {:.3} {:.3} {:.3} ",
         accel.x, accel.y, accel.z, max_accel_x, max_accel_y, max_accel_z
     )?;
     writeln!(
@@ -260,43 +268,47 @@ fn monitor_left_joycon(
 
     let mut stick: Vector2<f64> = Vector2 { x: 0.0, y: 0.0 };
     let mut squat_track = false;
-    if max_accel_x > 2.5 {
+    if accel.x > 1.1 {
+        eprintln!("jump");
+        print!("BUTTON,X ");
+    } else if max_accel_x > 2.5 {
+        // if you run fast enough you come out of sneak
+        if *squatting {
+            // press B to unsneak
+            print!("BUTTON,B ");
+            eprintln!("unsneak");
+            *squatting = false;
+        }
         // running
         stick.y = 1.0;
         if max_accel_x > 3.0 {
             // sprinting
+            eprintln!("sprint");
             print!("BUTTON,B ");
         }
     } else if max_accel_x > 1.5 {
         // walking
-        stick.y = max_accel_x - 1.5;
+        stick.y = max_accel_x - 1.0;
     } else {
-        // not moving, try jump
-        if accel.x > 0.5 || accel.x < -3.0 {
-            //eprintln!("jump");
-            print!("BUTTON,X ");
-        } else if accel.x > -0.6 {
-            if squat_steps > 5 {
+        if accel.x > -0.6 && !*squatting {
+            if *squat_steps > 5 {
+                // only press once to start sneaking, and then remain sneaking
                 print!("BUTTON,L_STICK_PRESS ");
-                //eprintln!("sneak");
+                eprintln!("sneak");
+                *squatting = true;
             } else {
-                squat_steps += 1;
+                *squat_steps += 1;
                 squat_track = true;
             }
         }
-        /*
-        if max_accel_x < 0.6 {
-            //eprintln!("sneak");
-            print!("BUTTON,L_STICK_PRESS ");
-        }*/
         // can we leave this enabled? It could get bumped or shaken?
         stick = report.left_stick;
     }
     if !squat_track {
-        squat_steps = 0;
+        *squat_steps = 0;
     }
     print!("STICK,LEFT,{:.2},{:.2} ", stick.x, stick.y);
-    Ok(squat_steps)
+    Ok(())
 }
 
 fn monitor_right_joycon(report: Report, mut f: &File) -> Result<()> {
