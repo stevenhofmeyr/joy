@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use cgmath::{Deg, Euler, One, Quaternion, Vector2, Vector3};
+use cgmath::{Vector2, Vector3};
 use clap::Clap;
 use colored::Colorize;
 use joycon::{
@@ -11,15 +11,12 @@ use joycon::{
         mcu::ir::Resolution,
         output::OutputReportEnum,
         spi::{ControllerColor, SPIRange, SensorCalibration, SticksCalibration, UserSensorCalibration, UserSticksCalibration},
-        //InputReport, OutputReport, HID_IDS, NINTENDO_VENDOR_ID,
-        InputReport,
-        OutputReport,
+        InputReport, OutputReport,
     },
     JoyCon, Report,
 };
 use std::{
     convert::TryFrom,
-    //fmt::Debug,
     fs::{File, OpenOptions},
     io::{BufRead, Write},
     time::Duration,
@@ -35,12 +32,6 @@ mod opts;
 mod relay;
 
 use opts::*;
-
-#[derive(strum_macros::Display)]
-enum SIDE {
-    LEFT,
-    RIGHT,
-}
 
 fn main() -> Result<()> {
     let formatter = tracing_subscriber::fmt()
@@ -183,6 +174,265 @@ fn hid_main(mut left_joycon: JoyCon, mut right_joycon: JoyCon, opts: &Opts) -> R
         #[cfg(feature = "interface")]
         SubCommand::Tui => unreachable!(),
         SubCommand::Camera => camera::run(right_joycon)?,
+    }
+    Ok(())
+}
+
+const WIN_SIZE: usize = 60;
+
+fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
+    //calibrate_gyro(left_joycon, "left")?;
+    left_joycon.enable_imu()?;
+    left_joycon.load_calibration()?;
+    //calibrate_gyro(right_joycon, "right")?;
+    right_joycon.enable_imu()?;
+    right_joycon.load_calibration()?;
+
+    right_joycon.enable_ringcon()?;
+
+    let mut left_gyro_file = File::create("left_gyro.dat")?;
+    let mut right_gyro_file = File::create("right_gyro.dat")?;
+
+    writeln!(
+        left_gyro_file,
+        "accel_x accel_y accel_z maxa_x maxa_y maxa_z gyro_x gyro_y gyro_z maxg_x maxg_y maxg_z"
+    )?;
+
+    writeln!(right_gyro_file, "accel_x accel_y accel_z gyro_x gyro_y gyro_z flex")?;
+
+    let mut accel_window: Vector3<[f64; WIN_SIZE]> = Vector3 {
+        x: [0.0; WIN_SIZE],
+        y: [0.0; WIN_SIZE],
+        z: [0.0; WIN_SIZE],
+    };
+    let mut gyro_window: Vector3<[f64; WIN_SIZE]> = Vector3 {
+        x: [0.0; WIN_SIZE],
+        y: [0.0; WIN_SIZE],
+        z: [0.0; WIN_SIZE],
+    };
+
+    let mut squat_steps = 0;
+
+    let mut now = Instant::now();
+    loop {
+        let left_report = left_joycon.tick()?;
+        let right_report = right_joycon.tick()?;
+        // NOTE: the default update interval for the joycons is 15ms (66Hz) and the pro controller is 8ms (120Hz)
+        if now.elapsed() > Duration::from_millis(1000 / 66) {
+            now = Instant::now();
+            squat_steps = monitor_left_joycon(left_report, &left_gyro_file, &mut accel_window, &mut gyro_window, squat_steps)?;
+            monitor_right_joycon(right_report, &right_gyro_file)?;
+            // the reader on the other side of the pipe reads by line, so this ensures it gets the latest update all as one
+            println!("");
+            std::io::stdout().flush()?;
+        }
+    }
+}
+
+fn monitor_left_joycon(
+    report: Report,
+    mut f: &File,
+    accel_window: &mut Vector3<[f64; WIN_SIZE]>,
+    gyro_window: &mut Vector3<[f64; WIN_SIZE]>,
+    mut squat_steps: i32,
+) -> Result<i32> {
+    print!("{}", report.buttons);
+
+    let frame = &report.imu.unwrap()[2];
+    let accel = frame.accel;
+    let gyro = frame.gyro;
+    let max_accel_x = max_magnitude(&mut (*accel_window).x, accel.x);
+    let max_accel_y = max_magnitude(&mut (*accel_window).y, accel.y);
+    let max_accel_z = max_magnitude(&mut (*accel_window).z, accel.z);
+    let max_gyro_x = max_magnitude(&mut (*gyro_window).x, gyro.x);
+    let max_gyro_y = max_magnitude(&mut (*gyro_window).y, gyro.y);
+    let max_gyro_z = max_magnitude(&mut (*gyro_window).z, gyro.z);
+    writeln!(
+        f,
+        "{:.3} {:.3} {:.3} {:.3} {:.3} {:.3}",
+        accel.x, accel.y, accel.z, max_accel_x, max_accel_y, max_accel_z
+    )?;
+    writeln!(
+        f,
+        "{:.3} {:.3} {:.3} {:.3} {:.3} {:.3}",
+        gyro.x, gyro.y, gyro.z, max_gyro_x, max_gyro_y, max_gyro_z
+    )?;
+
+    let mut stick: Vector2<f64> = Vector2 { x: 0.0, y: 0.0 };
+    let mut squat_track = false;
+    if max_accel_x > 2.5 {
+        // running
+        stick.y = 1.0;
+        if max_accel_x > 3.0 {
+            // sprinting
+            print!("BUTTON,B ");
+        }
+    } else if max_accel_x > 1.5 {
+        // walking
+        stick.y = max_accel_x - 1.5;
+    } else {
+        // not moving, try jump
+        if accel.x > 0.5 || accel.x < -3.0 {
+            //eprintln!("jump");
+            print!("BUTTON,X ");
+        } else if accel.x > -0.6 {
+            if squat_steps > 5 {
+                print!("BUTTON,L_STICK_PRESS ");
+                //eprintln!("sneak");
+            } else {
+                squat_steps += 1;
+                squat_track = true;
+            }
+        }
+        /*
+        if max_accel_x < 0.6 {
+            //eprintln!("sneak");
+            print!("BUTTON,L_STICK_PRESS ");
+        }*/
+        // can we leave this enabled? It could get bumped or shaken?
+        stick = report.left_stick;
+    }
+    if !squat_track {
+        squat_steps = 0;
+    }
+    print!("STICK,LEFT,{:.2},{:.2} ", stick.x, stick.y);
+    Ok(squat_steps)
+}
+
+fn monitor_right_joycon(report: Report, mut f: &File) -> Result<()> {
+    print!("{}", report.buttons);
+
+    let frame = &report.imu.unwrap()[2];
+    let accel = frame.accel;
+    let gyro = frame.gyro;
+
+    let mut bow_pull = false;
+
+    let flex = report.raw.imu_frames().unwrap()[2].raw_ringcon();
+    if flex > 300 && flex < 2000 {
+        //eprintln!("pulling bow");
+        print!("BUTTON,ZR ");
+        bow_pull = true;
+    } else if flex > 3000 {
+        // pushing attacks
+        //eprintln!("attack!");
+        print!("BUTTON,Y ");
+    }
+    writeln!(
+        f,
+        "{:.3} {:.3} {:.3} {:.3} {:.3} {:.3} {}",
+        accel.x, accel.y, accel.z, gyro.x, gyro.y, gyro.z, flex
+    )?;
+    let mut stick: Vector2<f64> = Vector2 { x: 0.0, y: 0.0 };
+    if bow_pull {
+        // point bow (rotate ringcon for up/down, tilt for left/right)
+        if accel.z < -0.8 {
+            stick.x = 1.0;
+        } else if accel.z > 0.8 {
+            stick.x = -1.0;
+        } else if accel.y < 0.65 {
+            if accel.x < -0.4 {
+                stick.y = 1.0;
+            } else if accel.x > 0.4 {
+                stick.y = -1.0;
+            }
+        }
+    } else {
+        // adjust viewpoint (rotate ringcon for left/right, tilt for up/down)
+        if accel.z < -0.8 {
+            stick.y = 1.0;
+        } else if accel.z > 0.8 {
+            stick.y = -1.0;
+        } else if accel.y < 0.65 {
+            if accel.x < -0.4 {
+                stick.x = -1.0;
+            } else if accel.x > 0.4 {
+                stick.x = 1.0;
+            }
+        } else {
+            stick = report.right_stick;
+        }
+    }
+    print!("STICK,RIGHT,{:.2},{:.2} ", stick.x, stick.y);
+    Ok(())
+}
+
+fn max_magnitude(window_vals: &mut [f64; WIN_SIZE], new_val: f64) -> f64 {
+    (*window_vals).rotate_left(1);
+    (*window_vals)[WIN_SIZE - 1] = new_val.abs();
+    (*window_vals).iter().cloned().fold((*window_vals)[0], f64::max)
+}
+
+fn decode() -> anyhow::Result<()> {
+    let stdin = std::io::stdin();
+    let mut image = joycon::Image::new();
+    image.change_resolution(Resolution::R320x240);
+    for line in stdin.lock().lines() {
+        let line = line?;
+        let fragments: Vec<&str> = line.split(" ").collect();
+        let side = fragments[0];
+        let time = fragments[1];
+        let hex = hex::decode(&fragments[2][2..])?;
+        if side == ">" {
+            let mut report = InputReport::new();
+            let raw_report = report.as_bytes_mut();
+            let len = raw_report.len().min(hex.len());
+            raw_report[..len].copy_from_slice(&hex[..len]);
+            match InputReportEnum::try_from(report) {
+                Ok(InputReportEnum::StandardAndSubcmd((_, subcmd))) => {
+                    println!("{} {}", time.blue(), format!("{:?}", subcmd).green());
+                }
+                Ok(InputReportEnum::StandardFullMCU((_, _, mcu))) => {
+                    println!("{} {:?}", time.blue(), mcu);
+                    image.handle(&mcu);
+                    if let Some(img) = image.last_image.take() {
+                        img.save("/tmp/out.png")?;
+                        dbg!("new image");
+                    }
+                }
+                _ => {}
+            }
+        } else {
+            let mut report = OutputReport::new();
+            let raw_report = report.as_bytes_mut();
+            let len = raw_report.len().min(hex.len());
+            raw_report[..len].copy_from_slice(&hex[..len]);
+            match OutputReportEnum::try_from(report) {
+                Ok(OutputReportEnum::RumbleAndSubcmd(subcmd)) => {
+                    println!("{} {}", time.blue(), format!("{:?}", subcmd).red());
+                }
+                Ok(OutputReportEnum::RequestMCUData(mcu)) => {
+                    println!("{} {}", time.blue(), format!("{:?}", mcu).yellow());
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn ringcon(joycon: &mut JoyCon, cmd: &Ringcon) -> anyhow::Result<()> {
+    println!("Ringcon initialisation...");
+    joycon.enable_ringcon()?;
+    match cmd.subcmd {
+        RingconE::StoredFlex => {
+            println!(
+                "Stored steps: {}",
+                joycon
+                    .call_subcmd_wait(AccessoryCommand::get_offline_steps())?
+                    .maybe_accessory()
+                    .unwrap()
+                    .offline_steps()?
+                    .steps
+            );
+        }
+        RingconE::Monitor => loop {
+            let report = joycon.recv()?;
+            let frames = report.imu_frames().unwrap();
+            println!("Flex value: {}", frames[2].raw_ringcon());
+        },
+        RingconE::Exp => {}
     }
     Ok(())
 }
@@ -433,288 +683,5 @@ fn set_color(joycon: &mut JoyCon, arg: &SetColor) -> Result<()> {
     println!("Setting controller colors to {:x?}", colors);
     joycon.write_spi(colors)?;
     println!("Reconnect your controller");
-    Ok(())
-}
-
-const WIN_SIZE: usize = 60;
-
-fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
-    //calibrate_gyro(left_joycon, "left")?;
-    left_joycon.enable_imu()?;
-    left_joycon.load_calibration()?;
-    //calibrate_gyro(right_joycon, "right")?;
-    right_joycon.enable_imu()?;
-    right_joycon.load_calibration()?;
-
-    right_joycon.enable_ringcon()?;
-
-    let left_gyro_file = File::create("left_gyro.dat")?;
-    let right_gyro_file = File::create("right_gyro.dat")?;
-
-    let mut left_orientation = Quaternion::<f64>::one();
-    let mut right_orientation = Quaternion::<f64>::one();
-
-    let mut accel_window: Vector3<[f64; WIN_SIZE]> = Vector3 {
-        x: [0.0; WIN_SIZE],
-        y: [0.0; WIN_SIZE],
-        z: [0.0; WIN_SIZE],
-    };
-    let mut gyro_window: Vector3<[f64; WIN_SIZE]> = Vector3 {
-        x: [0.0; WIN_SIZE],
-        y: [0.0; WIN_SIZE],
-        z: [0.0; WIN_SIZE],
-    };
-
-    let mut now = Instant::now();
-    loop {
-        let left_report = left_joycon.tick()?;
-        let right_report = right_joycon.tick()?;
-        // NOTE: the default update interval for the joycons is 15ms (66Hz) and the pro controller is 8ms (120Hz)
-        if now.elapsed() > Duration::from_millis(1000 / 120) {
-            now = Instant::now();
-            left_orientation = monitor_one_joycon(
-                left_report,
-                SIDE::LEFT,
-                &left_gyro_file,
-                left_orientation,
-                &mut accel_window,
-                &mut gyro_window,
-            )?;
-            right_orientation = monitor_one_joycon(
-                right_report,
-                SIDE::RIGHT,
-                &right_gyro_file,
-                right_orientation,
-                &mut accel_window,
-                &mut gyro_window,
-            )?;
-            // the reader on the other side of the pipe reads by line, so this ensures it gets the latest update all as one
-            println!("");
-            std::io::stdout().flush()?;
-        }
-    }
-}
-
-fn monitor_one_joycon(
-    report: Report,
-    side: SIDE,
-    mut f: &File,
-    mut orientation: Quaternion<f64>,
-    accel_window: &mut Vector3<[f64; WIN_SIZE]>,
-    gyro_window: &mut Vector3<[f64; WIN_SIZE]>,
-) -> Result<Quaternion<f64>> {
-    print!("{}", report.buttons);
-
-    let mut accel = Vector3::unit_x();
-    let mut gyro = Vector3::unit_x();
-
-    for frame in &report.imu.unwrap() {
-        orientation = orientation
-            * Quaternion::from(Euler::new(
-                Deg(frame.gyro.x * 0.005),
-                Deg(frame.gyro.y * 0.005),
-                Deg(frame.gyro.z * 0.005),
-            ));
-        accel = frame.accel;
-        gyro = frame.gyro;
-    }
-    let euler_rot = Euler::from(orientation);
-    let pitch = Deg::from(euler_rot.x);
-    let yaw = Deg::from(euler_rot.y);
-    let roll = Deg::from(euler_rot.z);
-    let mut flex = 0;
-    let mut bow_pull = false;
-    match side {
-        SIDE::RIGHT => {
-            flex = report.raw.imu_frames().unwrap()[2].raw_ringcon();
-            if flex > 300 && flex < 2000 {
-                // pulling draws bow
-                print!("BUTTON,ZR ");
-                bow_pull = true;
-                //eprintln!("pulling bow");
-            } else if flex > 3000 {
-                // pushing attacks
-                print!("BUTTON,Y ");
-                //eprintln!("attack!");
-            }
-        }
-        _ => (),
-    };
-    let max_accel_x = max_magnitude(&mut (*accel_window).x, accel.x);
-    let max_accel_y = max_magnitude(&mut (*accel_window).y, accel.y);
-    let max_accel_z = max_magnitude(&mut (*accel_window).z, accel.z);
-    writeln!(
-        f,
-        "{:.3} {:.3} {:.3} {:.3} {:.3} {:.3} {:.3} {:.3} {:.3} {:?} {:?} {:?} {}",
-        accel.x, accel.y, accel.z, max_accel_x, max_accel_y, max_accel_z, gyro.x, gyro.y, gyro.z, pitch, yaw, roll, flex,
-    )?;
-    let mut stick: Vector2<f64> = Vector2 { x: 0.0, y: 0.0 };
-    match side {
-        SIDE::LEFT => {
-            //stick = report.left_stick;
-            if max_accel_x > 2.5 {
-                stick.y = 1.0;
-                //eprintln!("running fast!");
-                if max_accel_x > 4.0 {
-                    print!("BUTTON,B ");
-                    //eprintln!("sprinting!");
-                }
-            } else if max_accel_x > 1.5 {
-                stick.y = max_accel_x - 1.5;
-                //eprintln!("running {:.2}", stick.x);
-            } else {
-                /*
-                // not moving forward, so we could be sneaking
-                if accel.z > 0.8 {
-                    print!("BUTTON,L_STICK_PRESS ");
-                    //eprintln!("sneaking...");
-                    if max_accel_x > 0.85 {
-                        stick.y = 1.0;
-                    } else {
-                        stick = report.left_stick;
-                    }
-                }
-                */
-                stick = report.left_stick;
-            }
-        }
-        SIDE::RIGHT => {
-            // adjust viewpoint
-            if accel.z < -0.5 {
-                if bow_pull {
-                    stick.x = -((accel.z + 0.5) / 0.5);
-                    if stick.x > 1.0 {
-                        stick.x = 1.0;
-                    }
-                } else {
-                    stick.y = -((accel.z + 0.5) / 0.5);
-                    if stick.y > 1.0 {
-                        stick.y = 1.0;
-                    }
-                }
-            } else if accel.z > 0.5 {
-                if bow_pull {
-                    stick.x = -((accel.z - 0.5) / 0.5);
-                    if stick.x < -1.0 {
-                        stick.x = -1.0;
-                    }
-                } else {
-                    stick.y = -((accel.z - 0.5) / 0.5);
-                    if stick.y < -1.0 {
-                        stick.y = -1.0;
-                    }
-                }
-            } else if accel.y < 0.65 {
-                if accel.x < -0.5 {
-                    if bow_pull {
-                        stick.y = -((accel.x + 0.5) / 0.5);
-                        if stick.y > 1.0 {
-                            stick.y = 1.0;
-                        }
-                    } else {
-                        stick.x = (accel.x + 0.5) / 0.5;
-                        if stick.x < -1.0 {
-                            stick.x = -1.0;
-                        }
-                    }
-                } else if accel.x > 0.5 {
-                    if bow_pull {
-                        stick.y = -((accel.x - 0.5) / 0.5);
-                        if stick.y < -1.0 {
-                            stick.y = -1.0;
-                        }
-                    } else {
-                        stick.x = (accel.x - 0.5) / 0.5;
-                        if stick.x > 1.0 {
-                            stick.x = 1.0;
-                        }
-                    }
-                }
-            } else {
-                stick = report.right_stick;
-            }
-        }
-    };
-    print!("STICK,{},{:.2},{:.2} ", side, stick.x, stick.y);
-    Ok(orientation)
-}
-
-fn max_magnitude(window_vals: &mut [f64; WIN_SIZE], new_val: f64) -> f64 {
-    (*window_vals).rotate_left(1);
-    (*window_vals)[WIN_SIZE - 1] = new_val.abs();
-    (*window_vals).iter().cloned().fold((*window_vals)[0], f64::max)
-}
-
-fn decode() -> anyhow::Result<()> {
-    let stdin = std::io::stdin();
-    let mut image = joycon::Image::new();
-    image.change_resolution(Resolution::R320x240);
-    for line in stdin.lock().lines() {
-        let line = line?;
-        let fragments: Vec<&str> = line.split(" ").collect();
-        let side = fragments[0];
-        let time = fragments[1];
-        let hex = hex::decode(&fragments[2][2..])?;
-        if side == ">" {
-            let mut report = InputReport::new();
-            let raw_report = report.as_bytes_mut();
-            let len = raw_report.len().min(hex.len());
-            raw_report[..len].copy_from_slice(&hex[..len]);
-            match InputReportEnum::try_from(report) {
-                Ok(InputReportEnum::StandardAndSubcmd((_, subcmd))) => {
-                    println!("{} {}", time.blue(), format!("{:?}", subcmd).green());
-                }
-                Ok(InputReportEnum::StandardFullMCU((_, _, mcu))) => {
-                    println!("{} {:?}", time.blue(), mcu);
-                    image.handle(&mcu);
-                    if let Some(img) = image.last_image.take() {
-                        img.save("/tmp/out.png")?;
-                        dbg!("new image");
-                    }
-                }
-                _ => {}
-            }
-        } else {
-            let mut report = OutputReport::new();
-            let raw_report = report.as_bytes_mut();
-            let len = raw_report.len().min(hex.len());
-            raw_report[..len].copy_from_slice(&hex[..len]);
-            match OutputReportEnum::try_from(report) {
-                Ok(OutputReportEnum::RumbleAndSubcmd(subcmd)) => {
-                    println!("{} {}", time.blue(), format!("{:?}", subcmd).red());
-                }
-                Ok(OutputReportEnum::RequestMCUData(mcu)) => {
-                    println!("{} {}", time.blue(), format!("{:?}", mcu).yellow());
-                }
-                _ => {}
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn ringcon(joycon: &mut JoyCon, cmd: &Ringcon) -> anyhow::Result<()> {
-    println!("Ringcon initialisation...");
-    joycon.enable_ringcon()?;
-    match cmd.subcmd {
-        RingconE::StoredFlex => {
-            println!(
-                "Stored steps: {}",
-                joycon
-                    .call_subcmd_wait(AccessoryCommand::get_offline_steps())?
-                    .maybe_accessory()
-                    .unwrap()
-                    .offline_steps()?
-                    .steps
-            );
-        }
-        RingconE::Monitor => loop {
-            let report = joycon.recv()?;
-            let frames = report.imu_frames().unwrap();
-            println!("Flex value: {}", frames[2].raw_ringcon());
-        },
-        RingconE::Exp => {}
-    }
     Ok(())
 }
