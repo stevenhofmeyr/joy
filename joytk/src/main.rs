@@ -215,10 +215,12 @@ fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
     let mut now = Instant::now();
 
     loop {
-        let left_report = left_joycon.tick()?;
-        let right_report = right_joycon.tick()?;
-        // NOTE: the default update interval for the joycons is 15ms (66Hz) and the pro controller is 8ms (120Hz)
-        if now.elapsed() > Duration::from_millis(1000 / 66) {
+        // The default update interval for the joycons is 15ms (66Hz) and the pro controller is 8ms (120Hz)
+        // NOTE: initially this was setup to do the tick calls outside the timer, and that caused huge lags. This seems to fix it.
+        if now.elapsed() > Duration::from_millis(1000 / 120) {
+            let left_report = left_joycon.tick()?;
+            let right_report = right_joycon.tick()?;
+            //if now.elapsed() > Duration::from_millis(1000 / 66) {
             now = Instant::now();
             monitor_left_joycon(
                 left_report,
@@ -269,21 +271,21 @@ fn monitor_left_joycon(
     let mut stick: Vector2<f64> = Vector2 { x: 0.0, y: 0.0 };
     let mut squat_track = false;
     if accel.x > 1.1 {
-        eprintln!("jump");
+        //eprintln!("jump");
         print!("BUTTON,X ");
     } else if max_accel_x > 2.5 {
         // if you run fast enough you come out of sneak
         if *squatting {
             // press B to unsneak
             print!("BUTTON,B ");
-            eprintln!("unsneak");
+            //eprintln!("unsneak");
             *squatting = false;
         }
         // running
         stick.y = 1.0;
         if max_accel_x > 3.0 {
             // sprinting
-            eprintln!("sprint");
+            //eprintln!("sprint");
             print!("BUTTON,B ");
         }
     } else if max_accel_x > 1.5 {
@@ -294,7 +296,7 @@ fn monitor_left_joycon(
             if *squat_steps > 5 {
                 // only press once to start sneaking, and then remain sneaking
                 print!("BUTTON,L_STICK_PRESS ");
-                eprintln!("sneak");
+                //eprintln!("sneak");
                 *squatting = true;
             } else {
                 *squat_steps += 1;
