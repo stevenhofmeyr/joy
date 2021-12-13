@@ -178,8 +178,6 @@ fn hid_main(mut left_joycon: JoyCon, mut right_joycon: JoyCon, opts: &Opts) -> R
     Ok(())
 }
 
-const WIN_SIZE: usize = 30;
-
 fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
     //calibrate_gyro(left_joycon, "left")?;
     left_joycon.enable_imu()?;
@@ -190,131 +188,134 @@ fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
 
     right_joycon.enable_ringcon()?;
 
+    let mut output_file = File::create("joycons")?;
     let mut left_gyro_file = File::create("left_gyro.dat")?;
     let mut right_gyro_file = File::create("right_gyro.dat")?;
 
-    writeln!(
-        left_gyro_file,
-        "accel_x accel_y accel_z maxa_x maxa_y maxa_z gyro_x gyro_y gyro_z maxg_x maxg_y maxg_z"
-    )?;
-
+    writeln!(left_gyro_file, "accel_x accel_y accel_z gyro_x gyro_y gyro_z")?;
     writeln!(right_gyro_file, "accel_x accel_y accel_z gyro_x gyro_y gyro_z flex")?;
-
-    let mut accel_window: Vector3<[f64; WIN_SIZE]> = Vector3 {
-        x: [0.0; WIN_SIZE],
-        y: [0.0; WIN_SIZE],
-        z: [0.0; WIN_SIZE],
-    };
-    let mut gyro_window: Vector3<[f64; WIN_SIZE]> = Vector3 {
-        x: [0.0; WIN_SIZE],
-        y: [0.0; WIN_SIZE],
-        z: [0.0; WIN_SIZE],
-    };
-    let mut squat_steps = 0;
-    let mut squatting = false;
+    let mut squat_count = 0;
+    let mut running_count = 0;
+    let mut sprinting_count = 0;
     let mut now = Instant::now();
-
+    let mut loop_num: i64 = 0;
     loop {
         // The default update interval for the joycons is 15ms (66Hz) and the pro controller is 8ms (120Hz)
         // NOTE: initially this was setup to do the tick calls outside the timer, and that caused huge lags. This seems to fix it.
-        if now.elapsed() > Duration::from_millis(1000 / 120) {
+        if now.elapsed() > Duration::from_millis(1000 / 66) {
             let left_report = left_joycon.tick()?;
             let right_report = right_joycon.tick()?;
-            //if now.elapsed() > Duration::from_millis(1000 / 66) {
             now = Instant::now();
             monitor_left_joycon(
+                loop_num,
                 left_report,
+                &output_file,
                 &left_gyro_file,
-                &mut accel_window,
-                &mut gyro_window,
-                &mut squat_steps,
-                &mut squatting,
+                &mut squat_count,
+                &mut running_count,
+                &mut sprinting_count,
             )?;
-            monitor_right_joycon(right_report, &right_gyro_file)?;
+            monitor_right_joycon(loop_num, right_report, &output_file, &right_gyro_file)?;
             // the reader on the other side of the pipe reads by line, so this ensures it gets the latest update all as one
-            println!("");
-            std::io::stdout().flush()?;
+            writeln!(output_file, "")?;
+            loop_num += 1000 / 66;
         }
     }
 }
 
 fn monitor_left_joycon(
+    loop_num: i64,
     report: Report,
-    mut f: &File,
-    accel_window: &mut Vector3<[f64; WIN_SIZE]>,
-    gyro_window: &mut Vector3<[f64; WIN_SIZE]>,
-    squat_steps: &mut i32,
-    squatting: &mut bool,
+    mut output_file: &File,
+    mut gyro_file: &File,
+    squat_count: &mut i32,
+    running_count: &mut i32,
+    sprinting_count: &mut i32,
 ) -> Result<()> {
-    print!("{}", report.buttons);
+    write!(output_file, "{}", report.buttons)?;
+
+    // reasonable strides per minute is 160, which means the left leg moves 80 times per minute, i.e. the wavelength
+    // of each left stride is around 750ms. Now we are sampling at intervals of 15ms, so we expect a stride to
+    // take around 50 ticks. But we don't need to track that long because we don't need peak to peak. So 30 is probably a decent
+    // compromise
+    const RUNNING_WAVELENGTH: i32 = 30;
+    // sprint cadence is at least 2x running
+    const SPRINTING_WAVELENGTH: i32 = 15;
 
     let frame = &report.imu.unwrap()[2];
     let accel = frame.accel;
     let gyro = frame.gyro;
-    let max_accel_x = max_magnitude(&mut (*accel_window).x, accel.x);
-    let max_accel_y = max_magnitude(&mut (*accel_window).y, accel.y);
-    let max_accel_z = max_magnitude(&mut (*accel_window).z, accel.z);
-    let max_gyro_x = max_magnitude(&mut (*gyro_window).x, gyro.x);
-    let max_gyro_y = max_magnitude(&mut (*gyro_window).y, gyro.y);
-    let max_gyro_z = max_magnitude(&mut (*gyro_window).z, gyro.z);
-    write!(
-        f,
-        "{:.3} {:.3} {:.3} {:.3} {:.3} {:.3} ",
-        accel.x, accel.y, accel.z, max_accel_x, max_accel_y, max_accel_z
-    )?;
     writeln!(
-        f,
-        "{:.3} {:.3} {:.3} {:.3} {:.3} {:.3}",
-        gyro.x, gyro.y, gyro.z, max_gyro_x, max_gyro_y, max_gyro_z
+        gyro_file,
+        "{:.3} {:.3} {:.3} {:.3} {:.3} {:.3} ",
+        accel.x, accel.y, accel.z, gyro.x, gyro.y, gyro.z
     )?;
 
     let mut stick: Vector2<f64> = Vector2 { x: 0.0, y: 0.0 };
-    let mut squat_track = false;
-    if accel.x > 1.1 {
-        //eprintln!("jump");
-        print!("BUTTON,X ");
-    } else if max_accel_x > 2.5 {
-        // if you run fast enough you come out of sneak
-        if *squatting {
-            // press B to unsneak
-            print!("BUTTON,B ");
-            //eprintln!("unsneak");
-            *squatting = false;
-        }
-        // running
-        stick.y = 1.0;
-        if max_accel_x > 3.0 {
-            // sprinting
-            //eprintln!("sprint");
-            print!("BUTTON,B ");
-        }
-    } else if max_accel_x > 1.5 {
-        // walking
-        stick.y = max_accel_x - 1.0;
+    // FIXME: need to check on this, but I think z is a better differentiator for jumps
+    //if accel.x < -4.0 {
+    if accel.z < -2.0 {
+        eprintln!("{} jump", loop_num);
+        write!(output_file, "BUTTON,X ")?;
+        // set these to zero so they don't trigger a follow on run!
+        *sprinting_count = 0;
+        *running_count = 0;
     } else {
-        if accel.x > -0.6 && !*squatting {
-            if *squat_steps > 5 {
-                // only press once to start sneaking, and then remain sneaking
-                print!("BUTTON,L_STICK_PRESS ");
-                //eprintln!("sneak");
-                *squatting = true;
-            } else {
-                *squat_steps += 1;
-                squat_track = true;
+        // not jumping
+        if accel.x < -2.5 {
+            if *sprinting_count == 0 {
+                eprintln!("{} started sprinting", loop_num);
             }
+            *sprinting_count = SPRINTING_WAVELENGTH;
+            write!(output_file, "BUTTON,B ")?;
+        } else if accel.x < -1.5 && *sprinting_count == 0 {
+            // moving, reset running count to keep running
+            if *running_count == 0 {
+                eprintln!("{} started running", loop_num);
+            }
+            *running_count = RUNNING_WAVELENGTH;
         }
-        // can we leave this enabled? It could get bumped or shaken?
-        stick = report.left_stick;
+        if *running_count == 0 && *sprinting_count == 0 {
+            // not running or jumping: squat if we haven't done so recently (i.e. unbuffer)
+            if accel.z > 0.8 {
+                if *squat_count > 5 {
+                    // only press once to start sneaking, and then remain sneaking
+                    write!(output_file, "BUTTON,L_STICK_PRESS ")?;
+                    eprintln!("{} sneak", loop_num);
+                    *squat_count = 0;
+                } else {
+                    *squat_count += 1;
+                }
+            } else {
+                if *squat_count > 0 {
+                    *squat_count -= 1;
+                }
+            }
+            // can we leave this enabled? It could get bumped or shaken?
+            stick = report.left_stick;
+        } else {
+            // we are still running, push stick
+            if *sprinting_count > 0 {
+                write!(output_file, "BUTTON,B ")?;
+                *sprinting_count -= 1;
+                if *sprinting_count == 0 {
+                    eprintln!("{} stopped sprinting", loop_num);
+                }
+            } else {
+                *running_count -= 1;
+                if *running_count == 0 {
+                    eprintln!("{} stopped running", loop_num);
+                }
+            }
+            stick.y = 1.0;
+        }
     }
-    if !squat_track {
-        *squat_steps = 0;
-    }
-    print!("STICK,LEFT,{:.2},{:.2} ", stick.x, stick.y);
+    write!(output_file, "STICK,LEFT,{:.2},{:.2} ", stick.x, stick.y)?;
     Ok(())
 }
 
-fn monitor_right_joycon(report: Report, mut f: &File) -> Result<()> {
-    print!("{}", report.buttons);
+fn monitor_right_joycon(loop_num: i64, report: Report, mut output_file: &File, mut gyro_file: &File) -> Result<()> {
+    write!(output_file, "{}", report.buttons)?;
 
     let frame = &report.imu.unwrap()[2];
     let accel = frame.accel;
@@ -323,17 +324,17 @@ fn monitor_right_joycon(report: Report, mut f: &File) -> Result<()> {
     let mut bow_pull = false;
 
     let flex = report.raw.imu_frames().unwrap()[2].raw_ringcon();
-    if flex > 300 && flex < 2000 {
-        //eprintln!("pulling bow");
-        print!("BUTTON,ZR ");
+    if flex > 300 && flex < 1500 {
+        eprintln!("pulling bow");
+        write!(output_file, "BUTTON,ZR ")?;
         bow_pull = true;
-    } else if flex > 3000 {
+    } else if flex > 3500 {
         // pushing attacks
-        //eprintln!("attack!");
-        print!("BUTTON,Y ");
+        eprintln!("{} attack!", loop_num);
+        write!(output_file, "BUTTON,Y ")?;
     }
     writeln!(
-        f,
+        gyro_file,
         "{:.3} {:.3} {:.3} {:.3} {:.3} {:.3} {}",
         accel.x, accel.y, accel.z, gyro.x, gyro.y, gyro.z, flex
     )?;
@@ -357,24 +358,22 @@ fn monitor_right_joycon(report: Report, mut f: &File) -> Result<()> {
             stick.y = 1.0;
         } else if accel.z > 0.8 {
             stick.y = -1.0;
-        } else if accel.y < 0.65 {
+        }
+        if accel.y < 0.65 {
             if accel.x < -0.4 {
                 stick.x = -1.0;
             } else if accel.x > 0.4 {
                 stick.x = 1.0;
             }
         } else {
-            stick = report.right_stick;
+            //stick = report.right_stick;
         }
     }
-    print!("STICK,RIGHT,{:.2},{:.2} ", stick.x, stick.y);
+    write!(output_file, "STICK,RIGHT,{:.2},{:.2} ", stick.x, stick.y)?;
+    if stick.x != 0.0 || stick.y != 0.0 {
+        eprintln!("{} stick x {} y {}", loop_num, stick.x, stick.y);
+    }
     Ok(())
-}
-
-fn max_magnitude(window_vals: &mut [f64; WIN_SIZE], new_val: f64) -> f64 {
-    (*window_vals).rotate_left(1);
-    (*window_vals)[WIN_SIZE - 1] = new_val.abs();
-    (*window_vals).iter().cloned().fold((*window_vals)[0], f64::max)
 }
 
 fn decode() -> anyhow::Result<()> {
