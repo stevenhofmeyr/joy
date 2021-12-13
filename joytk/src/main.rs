@@ -197,6 +197,7 @@ fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
     let mut squat_count = 0;
     let mut running_count = 0;
     let mut sprinting_count = 0;
+    let mut button_a_count = 0;
     let mut now = Instant::now();
     let mut loop_num: i64 = 0;
     loop {
@@ -215,7 +216,7 @@ fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
                 &mut running_count,
                 &mut sprinting_count,
             )?;
-            monitor_right_joycon(loop_num, right_report, &output_file, &right_gyro_file)?;
+            monitor_right_joycon(loop_num, right_report, &output_file, &right_gyro_file, &mut button_a_count)?;
             // the reader on the other side of the pipe reads by line, so this ensures it gets the latest update all as one
             writeln!(output_file, "")?;
             loop_num += 1000 / 66;
@@ -236,8 +237,8 @@ fn monitor_left_joycon(
 
     // reasonable strides per minute is 160, which means the left leg moves 80 times per minute, i.e. the wavelength
     // of each left stride is around 750ms. Now we are sampling at intervals of 15ms, so we expect a stride to
-    // take around 50 ticks. But we don't need to track that long because we don't need peak to peak. So 30 is probably a decent
-    // compromise
+    // take around 50 ticks. But we don't need to track that long because we don't need peak to peak.
+    // So 30 is a reasonable compromise
     const RUNNING_WAVELENGTH: i32 = 30;
     // sprint cadence is at least 2x running
     const SPRINTING_WAVELENGTH: i32 = 15;
@@ -252,17 +253,32 @@ fn monitor_left_joycon(
     )?;
 
     let mut stick: Vector2<f64> = Vector2 { x: 0.0, y: 0.0 };
-    // FIXME: need to check on this, but I think z is a better differentiator for jumps
-    //if accel.x < -4.0 {
-    if accel.z < -2.0 {
-        eprintln!("{} jump", loop_num);
-        write!(output_file, "BUTTON,X ")?;
-        // set these to zero so they don't trigger a follow on run!
-        *sprinting_count = 0;
-        *running_count = 0;
+    // this on the z plane only happens with squatting
+    if accel.z > 0.8 {
+        // for squatting, when we first squat, set the counter high, so that we don't immediatly press the sneak
+        // button again and standup
+        if *squat_count == 0 {
+            // only press once to start sneaking, and then remain sneaking
+            write!(output_file, "BUTTON,L_STICK_PRESS ")?;
+            eprintln!("{} sneak", loop_num);
+            *squat_count = 10;
+        }
     } else {
-        // not jumping
-        if accel.x < -2.5 {
+        // decrement the squat count to ensure enough time passes so we can get out of the squat
+        if *squat_count > 0 {
+            *squat_count -= 1;
+        }
+        //if accel.z > 1.5 && *squat_count > 0 {
+        if accel.z < -1.0 {
+            // to jump, need big accelertion following a squat
+            // FIXME: currently, this will squat and then jump!
+            eprintln!("{} jump", loop_num);
+            write!(output_file, "BUTTON,X ")?;
+            // jumps can trigger sprinting/running, so ensure they don't
+            *sprinting_count = 0;
+            *running_count = 0;
+        } else if accel.x < -2.5 {
+            // trigger on down wave only to avoid confusion with squatting (or sitting down!)
             if *sprinting_count == 0 {
                 eprintln!("{} started sprinting", loop_num);
             }
@@ -275,46 +291,36 @@ fn monitor_left_joycon(
             }
             *running_count = RUNNING_WAVELENGTH;
         }
-        if *running_count == 0 && *sprinting_count == 0 {
-            // not running or jumping: squat if we haven't done so recently (i.e. unbuffer)
-            if accel.z > 0.8 {
-                if *squat_count > 5 {
-                    // only press once to start sneaking, and then remain sneaking
-                    write!(output_file, "BUTTON,L_STICK_PRESS ")?;
-                    eprintln!("{} sneak", loop_num);
-                    *squat_count = 0;
-                } else {
-                    *squat_count += 1;
-                }
-            } else {
-                if *squat_count > 0 {
-                    *squat_count -= 1;
-                }
+        // we are still running, push stick
+        if *sprinting_count > 0 {
+            write!(output_file, "BUTTON,B ")?;
+            *sprinting_count -= 1;
+            if *sprinting_count == 0 {
+                eprintln!("{} stopped sprinting", loop_num);
             }
-            // can we leave this enabled? It could get bumped or shaken?
-            stick = report.left_stick;
-        } else {
-            // we are still running, push stick
-            if *sprinting_count > 0 {
-                write!(output_file, "BUTTON,B ")?;
-                *sprinting_count -= 1;
-                if *sprinting_count == 0 {
-                    eprintln!("{} stopped sprinting", loop_num);
-                }
-            } else {
-                *running_count -= 1;
-                if *running_count == 0 {
-                    eprintln!("{} stopped running", loop_num);
-                }
+        } else if *running_count > 0 {
+            *running_count -= 1;
+            if *running_count == 0 {
+                eprintln!("{} stopped running", loop_num);
             }
+        }
+        if *sprinting_count > 0 || *running_count > 0 {
             stick.y = 1.0;
+            // we don't need to wait anymore for the squat to finish
+            *squat_count = 0;
         }
     }
     write!(output_file, "STICK,LEFT,{:.2},{:.2} ", stick.x, stick.y)?;
     Ok(())
 }
 
-fn monitor_right_joycon(loop_num: i64, report: Report, mut output_file: &File, mut gyro_file: &File) -> Result<()> {
+fn monitor_right_joycon(
+    loop_num: i64,
+    report: Report,
+    mut output_file: &File,
+    mut gyro_file: &File,
+    button_a_count: &mut i32,
+) -> Result<()> {
     write!(output_file, "{}", report.buttons)?;
 
     let frame = &report.imu.unwrap()[2];
@@ -322,9 +328,10 @@ fn monitor_right_joycon(loop_num: i64, report: Report, mut output_file: &File, m
     let gyro = frame.gyro;
 
     let mut bow_pull = false;
+    let mut attack = false;
 
     let flex = report.raw.imu_frames().unwrap()[2].raw_ringcon();
-    if flex > 300 && flex < 1500 {
+    if flex > 300 && flex < 2000 {
         eprintln!("pulling bow");
         write!(output_file, "BUTTON,ZR ")?;
         bow_pull = true;
@@ -332,6 +339,7 @@ fn monitor_right_joycon(loop_num: i64, report: Report, mut output_file: &File, m
         // pushing attacks
         eprintln!("{} attack!", loop_num);
         write!(output_file, "BUTTON,Y ")?;
+        attack = true;
     }
     writeln!(
         gyro_file,
@@ -340,33 +348,46 @@ fn monitor_right_joycon(loop_num: i64, report: Report, mut output_file: &File, m
     )?;
     let mut stick: Vector2<f64> = Vector2 { x: 0.0, y: 0.0 };
     if bow_pull {
-        // point bow (rotate ringcon for up/down, tilt for left/right)
-        if accel.z < -0.8 {
-            stick.x = 1.0;
-        } else if accel.z > 0.8 {
-            stick.x = -1.0;
-        } else if accel.y < 0.65 {
+        if accel.y < 0.5 {
+            // point bow (rotate ringcon for up/down, tilt for left/right)
+            if accel.z < -0.8 {
+                stick.x = 1.0;
+            } else if accel.z > 0.8 {
+                stick.x = -1.0;
+            }
             if accel.x < -0.4 {
                 stick.y = 1.0;
             } else if accel.x > 0.4 {
                 stick.y = -1.0;
             }
         }
-    } else {
-        // adjust viewpoint (rotate ringcon for left/right, tilt for up/down)
-        if accel.z < -0.8 {
-            stick.y = 1.0;
-        } else if accel.z > 0.8 {
-            stick.y = -1.0;
-        }
-        if accel.y < 0.65 {
-            if accel.x < -0.4 {
+    } else if !attack {
+        if *button_a_count > 0 {
+            *button_a_count -= 1;
+        } else if accel.y < 0.5 {
+            // adjust viewpoint (rotate ringcon for left/right, tilt for up/down)
+            // don't do this when pressing the ringcon because that could make it wobble
+            if accel.z < -0.8 {
+                stick.y = 1.0;
+            } else if accel.z > 0.8 {
+                stick.y = -1.0;
+            }
+            if accel.x < -0.8 {
                 stick.x = -1.0;
-            } else if accel.x > 0.4 {
+            } else if accel.x > 0.8 {
                 stick.x = 1.0;
             }
-        } else {
-            //stick = report.right_stick;
+        }
+        //} else {
+        //stick = report.right_stick;
+        //}
+        if accel.y > 2.0 {
+            // FIXME: block movement of viewport for a short while afterwards because this motion
+            // triggers post viewport movement, mainly front/back
+            eprintln!("{} press A", loop_num);
+            // flick ringcon straight up to parry - note we need ZL too
+            write!(output_file, "BUTTON,A ")?;
+            *button_a_count = 20;
         }
     }
     write!(output_file, "STICK,RIGHT,{:.2},{:.2} ", stick.x, stick.y)?;
