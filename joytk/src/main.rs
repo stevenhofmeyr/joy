@@ -18,7 +18,7 @@ use joycon::{
 use std::{
     convert::TryFrom,
     fs::{File, OpenOptions},
-    io::{BufRead, Write},
+    io::{BufRead, Seek, SeekFrom, Write},
     time::Duration,
 };
 use std::{thread::sleep, time::Instant};
@@ -131,7 +131,7 @@ fn hid_init_joycon(mut joycon: JoyCon, lbl: &str) -> Result<JoyCon> {
         (battery_level >= BatteryLevel::Medium).into(),
         (battery_level >= BatteryLevel::Low).into(),
         if battery_level >= BatteryLevel::Low {
-            PlayerLight::On
+            PlayerLight::Off
         } else {
             PlayerLight::Blinking
         },
@@ -179,16 +179,14 @@ fn hid_main(mut left_joycon: JoyCon, mut right_joycon: JoyCon, opts: &Opts) -> R
 }
 
 fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
-    //calibrate_gyro(left_joycon, "left")?;
     left_joycon.enable_imu()?;
     left_joycon.load_calibration()?;
-    //calibrate_gyro(right_joycon, "right")?;
     right_joycon.enable_imu()?;
     right_joycon.load_calibration()?;
 
     right_joycon.enable_ringcon()?;
 
-    let mut output_file = File::create("joycons")?;
+    let mut output_file = File::create("/dev/shm/joycons")?;
     let mut left_gyro_file = File::create("left_gyro.dat")?;
     let mut right_gyro_file = File::create("right_gyro.dat")?;
 
@@ -207,6 +205,9 @@ fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
             let left_report = left_joycon.tick()?;
             let right_report = right_joycon.tick()?;
             now = Instant::now();
+            // truncate the file
+            //output_file.set_len(0)?;
+            //output_file.seek(SeekFrom::Start(0))?;
             monitor_left_joycon(
                 loop_num,
                 left_report,

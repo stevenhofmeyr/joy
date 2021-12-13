@@ -168,14 +168,7 @@ def console_worker(nx, controller, console_packet):
 
 
 def relay_inputs(nx, controller):
-    FIFO_NAME = "joycons"
-    while True:
-        try:
-            os.mkfifo(FIFO_NAME)
-            os.chmod(FIFO_NAME, mode=0o666)
-            break
-        except FileExistsError:
-            os.remove(FIFO_NAME)
+    FNAME = "/dev/shm/joycons"
 
     packet_manager = multiprocessing.Manager()
     console_packet = packet_manager.dict()
@@ -184,10 +177,11 @@ def relay_inputs(nx, controller):
     console_process.start()
 
     pressed_buttons = {}
-    print("Waiting for input on pipe", FIFO_NAME)
+    print("Waiting for input on pipe", FNAME)
     log_f = open("connection.log", "w")
     try:
-        f = open(FIFO_NAME, "r")
+        f = os.open(FNAME, "r")
+        os.chmod(FNAME, 0o666)
         done = False
         while not done:
             data = f.readline()
@@ -220,7 +214,7 @@ def relay_inputs(nx, controller):
                 print("currently pressed buttons", pressed_buttons, file=log_f, flush=True)
 
     finally:
-        os.remove(FIFO_NAME)
+        os.remove(FNAME)
         if nx is not None:
             packet_manager.shutdown()
             console_process.terminate()
