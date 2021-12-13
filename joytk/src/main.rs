@@ -18,7 +18,7 @@ use joycon::{
 use std::{
     convert::TryFrom,
     fs::{File, OpenOptions},
-    io::{BufRead, Seek, SeekFrom, Write},
+    io::{BufRead, Write},
     time::Duration,
 };
 use std::{thread::sleep, time::Instant};
@@ -126,6 +126,9 @@ fn hid_init_joycon(mut joycon: JoyCon, lbl: &str) -> Result<JoyCon> {
     joycon.set_home_light(light::HomeLight::new(0x8, 0x2, 0x0, &[(0xf, 0xf, 0), (0x2, 0xf, 0)]))?;
     let battery_level = joycon.tick()?.info.battery_level();
     eprintln!("{} Battery level is {:?}", lbl, battery_level);
+    if battery_level == BatteryLevel::Low {
+        eprintln!("\x1B[31m WARNING: LOW BATTERY - joycon may be sluggish. Suggest charging before playing \x1B[0m");
+    }
     joycon.set_player_light(light::PlayerLights::new(
         (battery_level >= BatteryLevel::Full).into(),
         (battery_level >= BatteryLevel::Medium).into(),
