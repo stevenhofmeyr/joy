@@ -177,16 +177,17 @@ def relay_inputs(nx, controller):
     console_process.start()
 
     pressed_buttons = {}
-    print("Waiting for input on pipe", FNAME)
+    print("Waiting for input on", FNAME)
     log_f = open("connection.log", "w")
     try:
-        f = os.open(FNAME, "r")
+        f = open(FNAME, "w+")
         os.chmod(FNAME, 0o666)
         done = False
         while not done:
             data = f.readline()
             if len(data) == 0:
                 continue
+            print(data)
             input_vals = "{0}".format(data).strip().split(" ")
             # print(input_vals, file=log_f, flush=True)
             sys.stdout.flush()

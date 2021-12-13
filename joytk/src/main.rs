@@ -13,7 +13,7 @@ use joycon::{
         spi::{ControllerColor, SPIRange, SensorCalibration, SticksCalibration, UserSensorCalibration, UserSticksCalibration},
         InputReport, OutputReport,
     },
-    JoyCon, Report,
+    JoyCon,
 };
 use std::{
     convert::TryFrom,
@@ -101,11 +101,12 @@ fn main() -> Result<()> {
 
     if let SubCommand::Relay(ref r) = opts.subcmd {
         eprintln!("Relay to switch...");
+        let left_joycon = get_joycon(left_dev_info_opt.unwrap(), &api)?;
         let right_dev_info = right_dev_info_opt.unwrap();
         let right_device = right_dev_info
             .open_device(&api)
             .with_context(|| format!("error opening the HID device {:?}", right_dev_info))?;
-        relay::relay(right_device, r).context("error during the relay")?;
+        relay::relay(right_device, r, left_joycon).context("error during the relay")?;
     } else {
         let left_joycon = get_joycon(left_dev_info_opt.unwrap(), &api)?;
         let right_joycon = get_joycon(right_dev_info_opt.unwrap(), &api)?;
@@ -205,22 +206,20 @@ fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
         // The default update interval for the joycons is 15ms (66Hz) and the pro controller is 8ms (120Hz)
         // NOTE: initially this was setup to do the tick calls outside the timer, and that caused huge lags. This seems to fix it.
         if now.elapsed() > Duration::from_millis(1000 / 66) {
-            let left_report = left_joycon.tick()?;
-            let right_report = right_joycon.tick()?;
             now = Instant::now();
             // truncate the file
             //output_file.set_len(0)?;
             //output_file.seek(SeekFrom::Start(0))?;
             monitor_left_joycon(
                 loop_num,
-                left_report,
+                left_joycon,
                 &output_file,
                 &left_gyro_file,
                 &mut squat_count,
                 &mut running_count,
                 &mut sprinting_count,
             )?;
-            monitor_right_joycon(loop_num, right_report, &output_file, &right_gyro_file, &mut button_a_count)?;
+            monitor_right_joycon(loop_num, right_joycon, &output_file, &right_gyro_file, &mut button_a_count)?;
             // the reader on the other side of the pipe reads by line, so this ensures it gets the latest update all as one
             writeln!(output_file, "")?;
             loop_num += 1000 / 66;
@@ -230,13 +229,14 @@ fn monitor(left_joycon: &mut JoyCon, right_joycon: &mut JoyCon) -> Result<()> {
 
 fn monitor_left_joycon(
     loop_num: i64,
-    report: Report,
+    joycon: &mut JoyCon,
     mut output_file: &File,
     mut gyro_file: &File,
     squat_count: &mut i32,
     running_count: &mut i32,
     sprinting_count: &mut i32,
 ) -> Result<()> {
+    let report = joycon.tick()?;
     write!(output_file, "{}", report.buttons)?;
 
     // reasonable strides per minute is 160, which means the left leg moves 80 times per minute, i.e. the wavelength
@@ -320,11 +320,12 @@ fn monitor_left_joycon(
 
 fn monitor_right_joycon(
     loop_num: i64,
-    report: Report,
+    joycon: &mut JoyCon,
     mut output_file: &File,
     mut gyro_file: &File,
     button_a_count: &mut i32,
 ) -> Result<()> {
+    let report = joycon.tick()?;
     write!(output_file, "{}", report.buttons)?;
 
     let frame = &report.imu.unwrap()[2];

@@ -40,11 +40,7 @@ impl InputReport {
     pub fn is_special(&self) -> bool {
         self.id != InputReportId::Normal
             && self.id != InputReportId::StandardFull
-            && self
-                .mcu_report()
-                .and_then(MCUReport::ir_data)
-                .map(|_| false)
-                .unwrap_or(true)
+            && self.mcu_report().and_then(MCUReport::ir_data).map(|_| false).unwrap_or(true)
     }
 
     pub fn len(&self) -> usize {
@@ -76,6 +72,21 @@ impl InputReport {
                 }
             }
             None => panic!("unknown report id {:x?}", self.id),
+        }
+    }
+
+    pub fn try_validate(&self) -> bool {
+        match self.id.try_into() {
+            Some(_) => {
+                if let Some(rep) = self.subcmd_reply() {
+                    rep.validate()
+                }
+                if let Some(rep) = self.mcu_report() {
+                    rep.validate()
+                }
+                return true;
+            }
+            None => return false,
         }
     }
 
@@ -164,16 +175,11 @@ raw_enum! {
 
 impl SubcommandReply {
     pub fn validate(&self) {
-        assert!(
-            self.id.try_into().is_some(),
-            "invalid subcmd id{:?}",
-            self.id
-        )
+        assert!(self.id.try_into().is_some(), "invalid subcmd id{:?}", self.id)
     }
 
     pub fn is_spi_write_success(&self) -> Option<bool> {
-        self.spi_write_result()
-            .map(|r| self.ack.is_ok() && r.success())
+        self.spi_write_result().map(|r| self.ack.is_ok() && r.success())
     }
 }
 

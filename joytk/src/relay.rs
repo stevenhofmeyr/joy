@@ -2,9 +2,7 @@ use anyhow::Context;
 use bluetooth_sys::*;
 use joycon::{
     hidapi::HidDevice,
-    joycon_sys::{
-        output::SubcommandRequestEnum, InputReport, InputReportId::StandardFull, OutputReport,
-    },
+    joycon_sys::{output::SubcommandRequestEnum, InputReport, InputReportId::StandardFull, OutputReport},
 };
 use socket2::{SockAddr, Socket};
 use std::{
@@ -20,7 +18,7 @@ use std::{
 
 use crate::opts::Relay;
 
-pub fn relay(device: HidDevice, opts: &Relay) -> anyhow::Result<()> {
+pub fn relay(device: HidDevice, opts: &Relay, mut joycon: joycon::JoyCon) -> anyhow::Result<()> {
     let mut output = opts
         .output
         .as_ref()
@@ -36,25 +34,25 @@ pub fn relay(device: HidDevice, opts: &Relay) -> anyhow::Result<()> {
     let (mut _client_ctl, mut client_itr) = connect_switch(&opts.address)?;
 
     // Force input reports to be generated so that we don't have to manually click on a button.
-    device.write(
-        OutputReport::from(SubcommandRequestEnum::SetInputReportMode(
-            StandardFull.into(),
-        ))
-        .as_bytes(),
-    )?;
+    device.write(OutputReport::from(SubcommandRequestEnum::SetInputReportMode(StandardFull.into())).as_bytes())?;
 
     let start = Instant::now();
     loop {
         {
             let mut buf = [0; 500];
             buf[0] = 0xa1;
-            let len = device
-                .read_timeout(&mut buf[1..], 0)
-                .context("joycon recv")?;
+            let len = device.read_timeout(&mut buf[1..], 0).context("joycon recv")?;
             if len > 0 {
                 let mut report = InputReport::new();
                 let raw_report = report.as_bytes_mut();
                 raw_report.copy_from_slice(&buf[1..raw_report.len() + 1]);
+                if report.try_validate() {
+                    let joycon_report = joycon.get_joycon_report(report).unwrap();
+                    let buttons_str = format!("{}", joycon_report.buttons);
+                    if buttons_str != "" {
+                        eprintln!("BUTTONS {} {}", joycon_report.buttons, hex::encode(&buf[1..len + 1]));
+                    }
+                }
 
                 let elapsed = start.elapsed().as_secs_f64();
 
@@ -76,12 +74,8 @@ pub fn relay(device: HidDevice, opts: &Relay) -> anyhow::Result<()> {
                         client_itr = x.1;
 
                         // Force input reports to be generated so that we don't have to manually click on a button.
-                        device.write(
-                            OutputReport::from(SubcommandRequestEnum::SetInputReportMode(
-                                StandardFull.into(),
-                            ))
-                            .as_bytes(),
-                        )?;
+                        device
+                            .write(OutputReport::from(SubcommandRequestEnum::SetInputReportMode(StandardFull.into())).as_bytes())?;
                     }
                 }
             }
@@ -129,20 +123,12 @@ fn connect_switch(address: &str) -> anyhow::Result<(Socket, Socket)> {
 
     unsafe {
         let ctl_addr = create_sockaddr(address, 17)?;
-        client_ctl
-            .connect(&ctl_addr)
-            .context("error connecting psm 17")?;
-        client_ctl
-            .set_nonblocking(true)
-            .context("non blocking error")?;
+        client_ctl.connect(&ctl_addr).context("error connecting psm 17")?;
+        client_ctl.set_nonblocking(true).context("non blocking error")?;
 
         let itr_addr = create_sockaddr(address, 19)?;
-        client_itr
-            .connect(&itr_addr)
-            .context("error connecting psm 17")?;
-        client_itr
-            .set_nonblocking(true)
-            .context("non blocking error")?;
+        client_itr.connect(&itr_addr).context("error connecting psm 17")?;
+        client_itr.set_nonblocking(true).context("non blocking error")?;
     }
 
     Ok((client_ctl, client_itr))
