@@ -32,11 +32,7 @@ pub struct WrongRangeError {
 
 impl fmt::Display for WrongRangeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "wrong SPI range: expected {:?}, got {:?}",
-            self.expected, self.got
-        )
+        write!(f, "wrong SPI range: expected {:?}, got {:?}", self.expected, self.got)
     }
 }
 
@@ -148,10 +144,7 @@ fn dbg_spi_data(out: &mut fmt::DebugStruct, address: U32LE, size: u8, data: &SPI
             (0x6098, 18) => out.field("stick_parameter2", raw),
             (0x8010, 24) => out.field("stick_user", &data.sticks_user_calib),
             (0x8028, 24) => out.field("imu_user", &data.imu_factory_calib),
-            _ => out
-                .field("address", &address)
-                .field("size", &size)
-                .field("raw", raw),
+            _ => out.field("address", &address).field("size", &size).field("raw", raw),
         };
     }
 }
@@ -320,11 +313,11 @@ pub struct RightStickCalibration {
 }
 
 impl RightStickCalibration {
-    fn conv_x(&self, raw: [u8; 3]) -> u16 {
+    pub fn conv_x(&self, raw: [u8; 3]) -> u16 {
         (((raw[1] as u16) << 8) & 0xF00) | raw[0] as u16
     }
 
-    fn conv_y(&self, raw: [u8; 3]) -> u16 {
+    pub fn conv_y(&self, raw: [u8; 3]) -> u16 {
         ((raw[2] as u16) << 4) | (raw[1] >> 4) as u16
     }
 
@@ -565,9 +558,7 @@ impl From<UserSensorCalibration> for SPIWriteRequest {
         SPIWriteRequest {
             address: range.0.into(),
             size: range.1,
-            data: SPIData {
-                imu_user_calib: calib,
-            },
+            data: SPIData { imu_user_calib: calib },
         }
     }
 }

@@ -191,7 +191,7 @@ pub enum Button {
 #[repr(packed)]
 #[derive(Copy, Clone)]
 pub struct Stick {
-    data: [u8; 3],
+    pub data: [u8; 3],
 }
 
 impl Stick {

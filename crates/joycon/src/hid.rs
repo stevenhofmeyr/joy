@@ -31,8 +31,8 @@ pub struct JoyCon {
     counter: u8,
     pub max_raw_gyro: i16,
     pub max_raw_accel: i16,
-    left_stick_calib: LeftStickCalibration,
-    right_stick_calib: RightStickCalibration,
+    pub left_stick_calib: LeftStickCalibration,
+    pub right_stick_calib: RightStickCalibration,
     image: Image,
     enable_ir_loop: bool,
     imu_handler: crate::imu_handler::Handler,
@@ -137,14 +137,6 @@ impl JoyCon {
         if let Some(frames) = report.imu_frames() {
             self.imu_handler.handle_frames(frames);
         }
-        /*
-        if let Some(mcu_report) = report.mcu_report() {
-            if self.enable_ir_loop {
-                for packet in self.image.handle(mcu_report).iter_mut().flatten() {
-                    self.send(packet)?;
-                }
-            }
-        }*/
         let std_report = report.standard().expect("should be standard");
 
         let left_stick = self

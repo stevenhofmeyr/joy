@@ -74,7 +74,8 @@ fn main() -> Result<()> {
                 right_dev_info_opt = Some(device_info.clone());
             }
         }
-        if !right_dev_info_opt.is_none() && !left_dev_info_opt.is_none() {
+        //if !right_dev_info_opt.is_none() && !left_dev_info_opt.is_none() {
+        if !right_dev_info_opt.is_none() {
             break;
         } else {
             if i == 0 {
@@ -100,13 +101,14 @@ fn main() -> Result<()> {
     }
 
     if let SubCommand::Relay(ref r) = opts.subcmd {
-        eprintln!("Relay to switch...");
-        let left_joycon = get_joycon(left_dev_info_opt.unwrap(), &api)?;
+        eprintln!("Setting up relay to switch...");
         let right_dev_info = right_dev_info_opt.unwrap();
+        let mut right_joycon = get_joycon(right_dev_info.clone(), &api)?;
+        right_joycon = hid_init_joycon(right_joycon, "Right joycon")?;
         let right_device = right_dev_info
             .open_device(&api)
             .with_context(|| format!("error opening the HID device {:?}", right_dev_info))?;
-        relay::relay(right_device, r, left_joycon).context("error during the relay")?;
+        relay::relay(right_device, r, right_joycon).context("error during the relay")?;
     } else {
         let left_joycon = get_joycon(left_dev_info_opt.unwrap(), &api)?;
         let right_joycon = get_joycon(right_dev_info_opt.unwrap(), &api)?;
@@ -119,7 +121,8 @@ fn get_joycon(device_info: DeviceInfo, api: &HidApi) -> Result<JoyCon> {
     let device = device_info
         .open_device(&api)
         .with_context(|| format!("error opening the HID device {:?}", device_info))?;
-    let joycon = JoyCon::new(device, device_info.clone())?;
+    let mut joycon = JoyCon::new(device, device_info.clone())?;
+    get(&mut joycon)?;
     Ok(joycon)
 }
 

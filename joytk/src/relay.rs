@@ -2,13 +2,17 @@ use anyhow::Context;
 use bluetooth_sys::*;
 use joycon::{
     hidapi::HidDevice,
-    joycon_sys::{output::SubcommandRequestEnum, InputReport, InputReportId::StandardFull, OutputReport},
+    joycon_sys::{
+        input::Stick, output::SubcommandRequestEnum, spi::RightStickCalibration, InputReport, InputReportId::StandardFull,
+        OutputReport,
+    },
+    JoyCon,
 };
 use socket2::{SockAddr, Socket};
 use std::{
     convert::TryInto,
     ffi::CString,
-    fs::OpenOptions,
+    fs::{File, OpenOptions},
     intrinsics::transmute,
     io::Write,
     mem::{size_of_val, zeroed, MaybeUninit},
@@ -18,7 +22,13 @@ use std::{
 
 use crate::opts::Relay;
 
-pub fn relay(device: HidDevice, opts: &Relay, mut joycon: joycon::JoyCon) -> anyhow::Result<()> {
+const RIGHT_BUTTONS_BYTE: usize = 4;
+const MIDDLE_BUTTONS_BYTE: usize = 5;
+const LEFT_BUTTONS_BYTE: usize = 6;
+const LEFT_STICK_BYTE: usize = 7;
+const RIGHT_STICK_BYTE: usize = 10;
+
+pub fn relay(device: HidDevice, opts: &Relay, mut joycon: JoyCon) -> anyhow::Result<()> {
     let mut output = opts
         .output
         .as_ref()
@@ -33,8 +43,17 @@ pub fn relay(device: HidDevice, opts: &Relay, mut joycon: joycon::JoyCon) -> any
         .transpose()?;
     let (mut _client_ctl, mut client_itr) = connect_switch(&opts.address)?;
 
+    joycon.enable_imu()?;
+    joycon.load_calibration()?;
+    joycon.enable_ringcon()?;
+
     // Force input reports to be generated so that we don't have to manually click on a button.
     device.write(OutputReport::from(SubcommandRequestEnum::SetInputReportMode(StandardFull.into())).as_bytes())?;
+
+    let mut right_gyro_file = File::create("right_gyro.dat")?;
+    writeln!(right_gyro_file, "accel_x accel_y accel_z gyro_x gyro_y gyro_z flex")?;
+    let mut button_a_count = 0;
+    let mut loop_num: i64 = 0;
 
     let start = Instant::now();
     loop {
@@ -47,11 +66,15 @@ pub fn relay(device: HidDevice, opts: &Relay, mut joycon: joycon::JoyCon) -> any
                 let raw_report = report.as_bytes_mut();
                 raw_report.copy_from_slice(&buf[1..raw_report.len() + 1]);
                 if report.try_validate() {
-                    let joycon_report = joycon.get_joycon_report(report).unwrap();
-                    let buttons_str = format!("{}", joycon_report.buttons);
-                    if buttons_str != "" {
-                        eprintln!("BUTTONS {} {}", joycon_report.buttons, hex::encode(&buf[1..len + 1]));
-                    }
+                    remap_right_joycon(
+                        &mut joycon,
+                        report,
+                        &mut buf,
+                        len,
+                        loop_num,
+                        &right_gyro_file,
+                        &mut button_a_count,
+                    );
                 }
 
                 let elapsed = start.elapsed().as_secs_f64();
@@ -105,8 +128,57 @@ pub fn relay(device: HidDevice, opts: &Relay, mut joycon: joycon::JoyCon) -> any
                 }
             }
         }
+        loop_num += 1;
         sleep(Duration::from_millis(1))
     }
+}
+
+fn remap_right_joycon(
+    joycon: &mut JoyCon,
+    report: InputReport,
+    buf: &mut [u8],
+    len: usize,
+    loop_num: i64,
+    mut gyro_file: &File,
+    button_a_count: &mut i32,
+) -> bool {
+    let joycon_report = joycon.get_joycon_report(report).unwrap();
+    let buttons_str = format!("{}", joycon_report.buttons);
+    if buttons_str != "" || loop_num == 0 {
+        let right_stick = Stick {
+            data: [buf[RIGHT_STICK_BYTE], buf[RIGHT_STICK_BYTE + 1], buf[RIGHT_STICK_BYTE + 2]],
+        };
+        let stick_pos = joycon.right_stick_calib.value_from_raw(
+            joycon.right_stick_calib.conv_x(right_stick.data),
+            joycon.right_stick_calib.conv_y(right_stick.data),
+        );
+        eprintln!(
+            "{} {:X} {:X} {:X} {:.2} {:.2}",
+            joycon_report.buttons,
+            buf[RIGHT_BUTTONS_BYTE],
+            buf[MIDDLE_BUTTONS_BYTE],
+            buf[LEFT_BUTTONS_BYTE],
+            stick_pos.x,
+            stick_pos.y
+        );
+    }
+    // testing: convert R to ZR
+    if buf[RIGHT_BUTTONS_BYTE] & 64 > 0 {
+        eprintln!("R pressed");
+        buf[RIGHT_BUTTONS_BYTE] |= 128;
+        //buf[ReportByteIndexes::RightButtons as usize] &= !64;
+        return true;
+    }
+    // testing: convert PLUS to stick x left?
+    if buf[MIDDLE_BUTTONS_BYTE] & 2 > 0 {
+        buf[MIDDLE_BUTTONS_BYTE] &= !2;
+        let (min_x, min_y) = joycon.right_stick_calib.min();
+        let min_x_bytes = min_x.to_be_bytes();
+        buf[RIGHT_STICK_BYTE] = min_x_bytes[0];
+        buf[RIGHT_STICK_BYTE + 1] = min_x_bytes[1];
+        return true;
+    }
+    false
 }
 
 fn connect_switch(address: &str) -> anyhow::Result<(Socket, Socket)> {
